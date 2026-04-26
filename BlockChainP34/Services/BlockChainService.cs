@@ -50,33 +50,62 @@ namespace BlockChainP34.Services
             var totalMiningTime = recentBlocks.Sum(b => b.MiningDurationSeconds);
             var averageMiningTime = totalMiningTime / _difficultyAdjustmentInterval;
 
-            if(averageMiningTime < _targetBlockTimeSeconds / 5)
-            {
-                Difficulty += 2;
-                Console.WriteLine($"Significantly increasing difficulty to {Difficulty}. Average mining time: {averageMiningTime:F2} seconds.");
-            }
+            int change = 0;
             if(averageMiningTime < _targetBlockTimeSeconds)
             {
-                Difficulty++;
-                Console.WriteLine($"Increasing difficulty to {Difficulty}. Average mining time: {averageMiningTime:F2} seconds.");
-            }
-            else if(averageMiningTime > _targetBlockTimeSeconds * 5)
-            {
-                Difficulty -= 2;
-                Console.WriteLine($"Significantly decreasing difficulty to {Difficulty}. Average mining time: {averageMiningTime:F2} seconds.");
+                if(averageMiningTime < _targetBlockTimeSeconds / 5)
+                {
+                    change += 2;
+                }
+                else
+                {
+                    change++;
+                }
             }
             else if(averageMiningTime > _targetBlockTimeSeconds)
             {
-                Difficulty = Math.Max(1, Difficulty - 1);
-                Console.WriteLine($"Decreasing difficulty to {Difficulty}. Average mining time: {averageMiningTime:F2} seconds.");
+                if (averageMiningTime > _targetBlockTimeSeconds * 5)
+                {
+                    change -= 2;
+                }
+                else
+                {
+                    change--;
+                }
             }
             else
             {
                 Console.WriteLine($"Difficulty remains at {Difficulty}. Average mining time: {averageMiningTime:F2} seconds.");
             }
+            int oldDifficulty = Difficulty;
+            Difficulty = Math.Clamp(Difficulty + change, 1, 6);
+
+            var changeCheck = Difficulty - oldDifficulty;
+            if (changeCheck == 2)
+            {
+                Console.WriteLine($"Significantly increasing difficulty to {Difficulty}. Average mining time: {averageMiningTime:F2} seconds.");
+            }
+            else if (changeCheck == 1)
+            {
+                Console.WriteLine($"Increasing difficulty to {Difficulty}. Average mining time: {averageMiningTime:F2} seconds.");
+            }
+            else if (changeCheck == -1)
+            {
+                Console.WriteLine($"Decreasing difficulty to {Difficulty}. Average mining time: {averageMiningTime:F2} seconds.");
+            }
+            else if (changeCheck == -2)
+            {
+                Console.WriteLine($"Significantly decreasing difficulty to {Difficulty}. Average mining time: {averageMiningTime:F2} seconds.");
+            }
+            else
+            {
+                Console.WriteLine($"Difficulty hit a boundary and remains at {Difficulty}. Average mining time: {averageMiningTime:F2} seconds.");
+            }
         }
 
-        public string PrintDifficultyHistoy()
+        //Difficulty = Math.Clamp(Difficulty + change, 1, 6);
+
+        public string PrintDifficultyHistory()
         {
             Console.WriteLine("Block Difficulty History:");
             for (int i = 1; i < Chain.Count; i++)
@@ -105,7 +134,7 @@ namespace BlockChainP34.Services
                     return false;
                 if (currentBlock.PreviousHash != previousBlock.Hash)
                     return false;
-                if (!currentBlock.Hash.StartsWith(new String('0', Difficulty)))
+                if (!currentBlock.Hash.StartsWith(new String('0', currentBlock.DifficultyAtMining)))
                     return false;
             }
             return true;
@@ -134,7 +163,7 @@ namespace BlockChainP34.Services
                     Console.WriteLine(error);
                     hasError = true;
                 }
-                if(currentBlock.Hash.StartsWith(new String('0', Difficulty)) != true)
+                if(currentBlock.Hash.StartsWith(new String('0', currentBlock.DifficultyAtMining)) != true)
                 {
                     var error = $"Error at block #{currentBlock.Index}: Hash doesn't meet the required difficulty.\n{new string('-', 50)}";
                     Console.WriteLine(error);

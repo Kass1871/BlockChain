@@ -97,4 +97,4 @@ for (int i = 0; i < 2; i++)
 Console.WriteLine();
 Console.WriteLine();
 
-blockChainService3.PrintDifficultyHistoy();
+blockChainService3.PrintDifficultyHistory();
