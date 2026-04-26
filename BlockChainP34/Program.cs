@@ -3,19 +3,19 @@
 var displayService = new DisplaySerivce();
 HashingService hashingService = new HashingService();
 
-var Prefix = string.Empty;
+var Difficulty = 0;
 do
 {
-    Console.WriteLine("Enter mining Prefix (e.g. 'd3fault'):");
-    Prefix = Console.ReadLine();
-    if (Prefix == null)
+    Console.WriteLine("Enter mining Difficulty (e.g. '2'):");
+    var input = Console.ReadLine();
+    if (!int.TryParse(input, out Difficulty))
     {
-        Console.WriteLine("Invalid prefix. Must not be null.");
+        Console.WriteLine("Invalid Difficulty. Must be a positive integer.");
     }
 
-} while (string.IsNullOrWhiteSpace(Prefix));
+} while (Difficulty <= 0);
 
-var blockChainService = new BlockChainService(Prefix);
+var blockChainService = new BlockChainService(Difficulty);
 
 blockChainService.AddBlock("Alice pays Bob 1054 ETH", "Alice");
 blockChainService.AddBlock("Bob pays Charlie 500 ETH", "Bob");
@@ -53,13 +53,16 @@ else
     Console.ForegroundColor = ConsoleColor.White;
 }
 
-var sw = System.Diagnostics.Stopwatch.StartNew();
-var blockChain = new BlockChainService(Prefix);
-blockChain.AddBlock("Alice pays Bob 10 BTC", "System");
-sw.Stop();
-Console.WriteLine($"Time taken to mine a block with pref {Prefix}: {sw.ElapsedMilliseconds} ms");
+foreach(var d in Enumerable.Range(0, Difficulty))
+{
+    var sw = System.Diagnostics.Stopwatch.StartNew();
+    var blockChain = new BlockChainService(Difficulty);
+    blockChain.AddBlock("Alice pays Bob 10 BTC", "System");
+    sw.Stop();
+    Console.WriteLine($"Time taken to mine a block with pref {Difficulty}: {sw.ElapsedMilliseconds} ms");
+}
 
-var blockChainService2 = new BlockChainService(Prefix);
+var blockChainService2 = new BlockChainService(Difficulty);
 
 blockChainService2.AddBlock("Daniel pays Gus 102 ETH", "Daniel");
 blockChainService2.AddBlock("Gus pays Bane 520 ETH", "Gus");
@@ -75,3 +78,23 @@ blockChainService2.Chain[3].Hash = "0000invalidHashAAA";
 Console.WriteLine(blockChainService2.AnalyzeChain());
 blockChainService2.Chain[4].PreviousHash = "ChangedHashBUH";
 Console.WriteLine(blockChainService2.AnalyzeChain());
+
+
+Console.ForegroundColor = ConsoleColor.White;
+var blockChainService3 = new BlockChainService(Difficulty);
+
+for (int i = 0; i < 2; i++)
+{
+    for(int j = 0; j < 2; j++)
+    {
+        blockChainService3.AddBlock("Alice pays Bob 1054 ETH", "Alice");
+        blockChainService3.AddBlock("Bob pays Charlie 500 ETH", "Bob");
+        blockChainService3.AddBlock("Charlie pays Dave 200 ETH", "Charlie");
+        displayService.DisplayBlockChain(blockChainService3.Chain);
+        Console.WriteLine($"Difficulty: {blockChainService3.Difficulty}");
+    }
+}
+Console.WriteLine();
+Console.WriteLine();
+
+blockChainService3.PrintDifficultyHistoy();

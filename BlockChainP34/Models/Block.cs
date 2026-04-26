@@ -21,8 +21,10 @@ namespace BlockChainP34.Models
         // Hash of the previous block in the chain
         public string PreviousHash { get; set; }
         public int Nonce { get; set; }
+        public double MiningDurationSeconds { get; set; }
+        public int DifficultyAtMining { get; set; }
 
-        public Block(int index, string author, string data, string prevHash, DateTime timestamp)
+        public Block(int index, string author, string data, string prevHash, DateTime timestamp, int difficultyAtMining )
         {
             Index = index;
             Author = author;
@@ -30,6 +32,7 @@ namespace BlockChainP34.Models
             Timestamp = timestamp;
             PreviousHash = prevHash;
             Hash = "";
+            DifficultyAtMining = difficultyAtMining;
         }
         public Block() { }
     }

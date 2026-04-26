@@ -1,4 +1,5 @@
 ﻿using BlockChainP34.Models;
+using System.Diagnostics;
 
 namespace BlockChainP34.Services
 {
@@ -11,9 +12,10 @@ namespace BlockChainP34.Services
             hashing = hashingService;
         }
 
-        public long MineBlock(Block block, string Prefix) {
-            var target = Prefix.ToLower();
+        public long MineBlock(Block block, int Difficulty) {
+            var target = new String('0', Difficulty);
 
+            var stopWatch = Stopwatch.StartNew();
             while (true)
             {
                 block.Hash = hashing.ComputeHash(block);
@@ -24,6 +26,8 @@ namespace BlockChainP34.Services
                 if (block.Hash.StartsWith(target))
                 {
                     Console.WriteLine($"Block mined: {block.Hash} with nonce: {block.Nonce}");
+                    stopWatch.Stop();
+                    block.MiningDurationSeconds = stopWatch.Elapsed.TotalSeconds;
                     return block.Nonce;
                 }
                 block.Nonce++;
