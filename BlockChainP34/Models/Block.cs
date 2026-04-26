@@ -30,7 +30,6 @@ namespace BlockChainP34.Models
             Timestamp = timestamp;
             PreviousHash = prevHash;
             Hash = "";
-            Nonce++;
         }
         public Block() { }
     }
