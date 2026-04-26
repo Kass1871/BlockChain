@@ -50,10 +50,20 @@ namespace BlockChainP34.Services
             var totalMiningTime = recentBlocks.Sum(b => b.MiningDurationSeconds);
             var averageMiningTime = totalMiningTime / _difficultyAdjustmentInterval;
 
+            if(averageMiningTime < _targetBlockTimeSeconds / 5)
+            {
+                Difficulty += 2;
+                Console.WriteLine($"Significantly increasing difficulty to {Difficulty}. Average mining time: {averageMiningTime:F2} seconds.");
+            }
             if(averageMiningTime < _targetBlockTimeSeconds)
             {
                 Difficulty++;
                 Console.WriteLine($"Increasing difficulty to {Difficulty}. Average mining time: {averageMiningTime:F2} seconds.");
+            }
+            else if(averageMiningTime > _targetBlockTimeSeconds * 5)
+            {
+                Difficulty -= 2;
+                Console.WriteLine($"Significantly decreasing difficulty to {Difficulty}. Average mining time: {averageMiningTime:F2} seconds.");
             }
             else if(averageMiningTime > _targetBlockTimeSeconds)
             {
