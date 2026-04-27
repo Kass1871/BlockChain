@@ -34,6 +34,7 @@ foreach (var tr in blockchainExplorer.GetAddressHistory("Alice"))
 {
     Console.WriteLine(tr);
 }
+Console.WriteLine($"Transaction location for txId {blockChainService.Chain[3].Transactions[0].Id}: {blockchainExplorer.FindTransactionLocation(blockChainService.Chain[3].Transactions[0].Id).ToString()}");
 Console.WriteLine(new string('-', 50));
 /*blockChainService.AddBlock("Alice pays Bob 1054 ETH", "Alice");
 blockChainService.AddBlock("Bob pays Charlie 500 ETH", "Bob");
