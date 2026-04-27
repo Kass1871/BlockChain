@@ -35,5 +35,10 @@ namespace BlockChainP34.Models
             DifficultyAtMining = difficultyAtMining;
         }
         public Block() { }
+
+        public override string ToString()
+        {
+            return $"Block Index: {Index}\nAuthor: {Author}\nTimestamp: {Timestamp}\nTransactions: {Transactions.Count}\nHash: {Hash}\nPreviousHash: {PreviousHash}\nNonce: {Nonce}\nMiningDurationSeconds: {MiningDurationSeconds}\nDifficultyAtMining: {DifficultyAtMining}";
+        }
     }
 }
