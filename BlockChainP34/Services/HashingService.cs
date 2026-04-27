@@ -12,7 +12,8 @@ namespace BlockChainP34.Services
     {
         public string ComputeHash(Block block)
         {
-            string rawData = $"{block.Index}{block.Author}{block.Timestamp}{block.Data}{block.PreviousHash}{block.Nonce}";
+            var transactionData = string.Concat(block.Transactions.Select(t => t.ToRawString()).ToArray());
+            string rawData = $"{block.Index}{block.Author}{block.Timestamp}{transactionData}{block.PreviousHash}{block.Nonce}";
 
             return ComputeHash(rawData);
         }

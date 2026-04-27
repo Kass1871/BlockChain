@@ -1,4 +1,5 @@
-﻿using BlockChainP34.Services;
+﻿using BlockChainP34.Models;
+using BlockChainP34.Services;
 
 var displayService = new DisplaySerivce();
 HashingService hashingService = new HashingService();
@@ -17,7 +18,24 @@ do
 
 var blockChainService = new BlockChainService(Difficulty);
 
-blockChainService.AddBlock("Alice pays Bob 1054 ETH", "Alice");
+blockChainService.AddBlock(new List<Transaction>(), "System");
+blockChainService.AddBlock(new List<Transaction> { TransactionService.CreateTransaction("Alice", "Bob", 10)}, "Alice");
+blockChainService.AddBlock(new List<Transaction> { TransactionService.CreateTransaction("Alice", "Bob", 100) }, "Alice");
+blockChainService.AddBlock(new List<Transaction>(), "System");
+blockChainService.AddBlock(new List<Transaction> { TransactionService.CreateTransaction("Alice", "Bob", 10), TransactionService.CreateTransaction("Alice", "Bob", 10)}, "Alice");
+
+displayService.DisplayBlockChain(blockChainService.Chain);
+
+BlockchainExplorer blockchainExplorer = new BlockchainExplorer(blockChainService.Chain);
+Console.WriteLine($" Total volume of transactions: {blockchainExplorer.GetTotalVolume()}");
+Console.WriteLine($" Largest transaction: {blockchainExplorer.GetLargestTransaction()}");
+Console.WriteLine($" Transactions from or to Alice:");
+foreach (var tr in blockchainExplorer.GetAddressHistory("Alice"))
+{
+    Console.WriteLine(tr);
+}
+Console.WriteLine(new string('-', 50));
+/*blockChainService.AddBlock("Alice pays Bob 1054 ETH", "Alice");
 blockChainService.AddBlock("Bob pays Charlie 500 ETH", "Bob");
 blockChainService.AddBlock("Charlie pays Dave 200 ETH", "Charlie");
 blockChainService.AddBlock("Dave pays Eve 100 ETH", "Dave");
@@ -97,4 +115,4 @@ for (int i = 0; i < 2; i++)
 Console.WriteLine();
 Console.WriteLine();
 
-blockChainService3.PrintDifficultyHistory();
+blockChainService3.PrintDifficultyHistory();*/

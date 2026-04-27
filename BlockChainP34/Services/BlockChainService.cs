@@ -24,16 +24,24 @@ namespace BlockChainP34.Services
 
         private void AddGenesisBlock()
         {
-            var block = new Block(0, "System", "Genesis Block", "0", DateTime.Parse("2026-06-01T00:00:00Z"), Difficulty);
-            block.Hash = _hashingService.ComputeHash(block);
+            var block = new Block(0, "System", new List<Transaction>(), "0", DateTime.Parse("2026-06-01T00:00:00Z"), Difficulty);
             Chain.Add(block);
         }
 
-        public void AddBlock(string data, string author)
+        public void AddBlock(List<Transaction> transactions, string author)
         {
+            foreach(var tx in transactions)
+            {
+                var isValid = TransactionService.ValidateTransaction(tx);
+                if (!isValid.IsValid)
+                {
+                    Console.WriteLine($"Invalid transaction: {isValid.error}");
+                    return;
+                }
+            }
             var lastBlock = Chain.Last();
-            var newBlock = new Block(lastBlock.Index + 1, author, data, lastBlock.Hash, DateTime.UtcNow, Difficulty);
-            newBlock.Hash = _hashingService.ComputeHash(newBlock);
+            var newBlock = new Block(lastBlock.Index + 1, author, transactions, lastBlock.Hash, DateTime.UtcNow, Difficulty);
+
             _miningService.MineBlock(newBlock, Difficulty);
             Chain.Add(newBlock);
 

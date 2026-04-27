@@ -15,7 +15,7 @@ namespace BlockChainP34.Models
         // Time of block creation
         public DateTime Timestamp { get; set; }
         // Data stored in the block
-        public string Data { get; set; }
+        public List<Transaction> Transactions { get; set; }
         // Hash of the current block 
         public string Hash { get; set; }
         // Hash of the previous block in the chain
@@ -24,11 +24,11 @@ namespace BlockChainP34.Models
         public double MiningDurationSeconds { get; set; }
         public int DifficultyAtMining { get; set; }
 
-        public Block(int index, string author, string data, string prevHash, DateTime timestamp, int difficultyAtMining )
+        public Block(int index, string author, List<Transaction> transactions, string prevHash, DateTime timestamp, int difficultyAtMining )
         {
             Index = index;
             Author = author;
-            Data = data;
+            Transactions = transactions;
             Timestamp = timestamp;
             PreviousHash = prevHash;
             Hash = "";

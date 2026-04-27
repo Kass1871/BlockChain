@@ -15,11 +15,21 @@ namespace BlockChainP34.Services
                 Console.WriteLine($"Index: {block.Index}");
                 Console.WriteLine($"Author: {block.Author}");
                 Console.WriteLine($"Timestamp: {block.Timestamp}");
-                Console.WriteLine($"Data: {block.Data}");
                 Console.WriteLine($"Hash: {block.Hash}");
                 Console.WriteLine($"Previous Hash: {block.PreviousHash}");
                 Console.WriteLine($"Nonce: {block.Nonce}");
-                Console.WriteLine(new string('-', 50));
+                Console.WriteLine(new string('=', 50));
+
+                var transactions = block.Transactions;
+                foreach (var transaction in transactions) {
+                    Console.WriteLine($"    Transaction Id: {transaction.Id.ToString()}");
+                    Console.WriteLine($"    From: {transaction.From}");
+                    Console.WriteLine($"    To: {transaction.To}");
+                    Console.WriteLine($"    Amount: {transaction.Amount}");
+                    Console.WriteLine($"    Timestamp: {transaction.TimeStamp}");
+                    Console.WriteLine(new string('-', 50));
+                }
+
             }
         }
     }
