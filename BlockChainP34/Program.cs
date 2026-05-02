@@ -63,6 +63,7 @@ while (true)
             }
             Console.WriteLine("Mining block...");
             blockChainService.AddBlock(list, "System");
+            list = new List<Transaction>();
             break;
         case "3":
             Console.WriteLine("Current Blockchain:");
