@@ -25,6 +25,7 @@ namespace BlockChainP34.Services
         private void AddGenesisBlock()
         {
             var block = new Block(0, "System", new List<Transaction>(), "0", DateTime.Parse("2026-06-01T00:00:00Z"), Difficulty);
+            _miningService.MineBlock(block, Difficulty);
             Chain.Add(block);
         }
 
@@ -150,7 +151,7 @@ namespace BlockChainP34.Services
 
         public string AnalyzeChain()
         {
-            if (Chain.Count == 0) return "Genesis block!";
+            if (Chain.Count == 0) return "Chain is empty.";
 
             var genesis = Chain[0];
             if (genesis.Index != 0) return "Genesis block is invalid.";

@@ -1,11 +1,90 @@
 ﻿using BlockChainP34.Models;
 using BlockChainP34.Services;
+using System.Xml;
 
 var displayService = new DisplaySerivce();
 HashingService hashingService = new HashingService();
 
 var Difficulty = 0;
-do
+var blockChainService = new BlockChainService(Difficulty);
+
+//============MENU============
+var list = new List<Transaction>();
+while (true)
+{
+
+    Console.WriteLine("Select an option:");
+    Console.WriteLine("[1] Add transactions");
+    Console.WriteLine("[2] Mine block");
+    Console.WriteLine("[3] Show blockchain");
+    Console.WriteLine("[4] Check validity");
+    Console.WriteLine("[0] Exit");
+    var input = Console.ReadLine();
+
+    switch (input)
+    {
+        case "1":
+            string? sender = null;
+            do {
+                Console.WriteLine("Enter sender:");
+                sender = Console.ReadLine();
+                if (string.IsNullOrWhiteSpace(sender)) {
+                    Console.WriteLine("Sender cannot be empty. Please enter a valid sender.");
+                }
+            } while (string.IsNullOrWhiteSpace(sender));
+
+            string? receiver = null;
+            do
+            {
+                Console.WriteLine("Enter receiver:");
+                receiver = Console.ReadLine();
+                if (string.IsNullOrWhiteSpace(receiver) || sender == receiver){
+                    Console.WriteLine("Receiver cannot be empty or be the same as sender. Please enter a valid receiver.");
+                }
+            } while(string.IsNullOrWhiteSpace(receiver) || sender == receiver);
+
+            decimal amt;
+            do
+            {
+                Console.WriteLine("Enter amount:");
+                if(!decimal.TryParse(Console.ReadLine(), out amt) || amt <= 0)
+                {
+                    Console.WriteLine("Invalid amount. Please enter a positive number.");
+                }
+            } while (!decimal.TryParse(Console.ReadLine(), out amt));
+
+            list.Add(TransactionService.CreateTransaction(sender, receiver, amt));
+            break;
+        case "2":
+            if(list.Count == 0)
+            {
+                Console.WriteLine("No transactions to mine. Please add transactions first.");
+                break;
+            }
+            Console.WriteLine("Mining block...");
+            blockChainService.AddBlock(list, "System");
+            break;
+        case "3":
+            Console.WriteLine("Current Blockchain:");
+            displayService.DisplayBlockChain(blockChainService.Chain);
+            break;
+        case "4":
+            Console.WriteLine("Checking chain for validity...");
+            Console.WriteLine(blockChainService.AnalyzeChain());
+            break;
+        case "0":
+            Console.WriteLine("Exiting...");
+            return;
+        default:
+            Console.WriteLine("Invalid option. Please select a valid option.");
+            break;
+    }
+}
+
+
+
+//============TESTING============
+/*do
 {
     Console.WriteLine("Enter mining Difficulty (e.g. '2'):");
     var input = Console.ReadLine();
@@ -35,7 +114,7 @@ foreach (var tr in blockchainExplorer.GetAddressHistory("Alice"))
     Console.WriteLine(tr);
 }
 Console.WriteLine($"Transaction location for txId {blockChainService.Chain[3].Transactions[0].Id}: {blockchainExplorer.FindTransactionLocation(blockChainService.Chain[3].Transactions[0].Id).ToString()}");
-Console.WriteLine(new string('-', 50));
+Console.WriteLine(new string('-', 50));*/
 /*blockChainService.AddBlock("Alice pays Bob 1054 ETH", "Alice");
 blockChainService.AddBlock("Bob pays Charlie 500 ETH", "Bob");
 blockChainService.AddBlock("Charlie pays Dave 200 ETH", "Charlie");
