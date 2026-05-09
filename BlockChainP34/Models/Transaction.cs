@@ -11,6 +11,7 @@ namespace BlockChainP34.Models
         public string Id { get; set; }
         public string From { get; set; }
         public string To { get; set; }
+        public byte[] Signature { get; set; }
         public decimal Amount { get; set; }
         public DateTime TimeStamp { get; set; } = DateTime.UtcNow;
         public Transaction(string from, string to, decimal amouunt)

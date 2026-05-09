@@ -5,11 +5,11 @@ using System.Xml;
 var displayService = new DisplaySerivce();
 HashingService hashingService = new HashingService();
 
-var Difficulty = 0;
+var Difficulty = 1;
 var blockChainService = new BlockChainService(Difficulty);
 
 //============MENU============
-var list = new List<Transaction>();
+/*var list = new List<Transaction>();
 while (true)
 {
 
@@ -80,11 +80,87 @@ while (true)
             Console.WriteLine("Invalid option. Please select a valid option.");
             break;
     }
-}
+}*/
 
 
 
 //============TESTING============
+
+var walletAlice = new Wallet(new CryptoService());
+var walletBob = new Wallet(new CryptoService());
+
+Console.WriteLine("Mining initial blocks to fund Alice's wallet...");
+for (int i = 0; i < 5; i++)
+{
+    blockChainService.MineBlock(walletAlice.PublicKey);
+}
+
+var balanceAlice = blockChainService.GetBalance(walletAlice.PublicKey);
+Console.WriteLine($"Alice balance check: {balanceAlice}");
+
+Console.WriteLine("\n--------Testing Mempool and double spending--------\n");
+try
+{
+    var tx1 = TransactionService.CreateTransaction(walletAlice.PublicKey, walletBob.PublicKey, 200m, walletAlice.PrivateKey);
+    blockChainService.AddTransaction(tx1);
+
+    var aliceBalanceInMempool = blockChainService.GetBalance(walletAlice.PublicKey);
+    Console.WriteLine($"Alice balance in mempool: {aliceBalanceInMempool}");
+
+    Console.WriteLine($"Alice tries to send another 200 coins.");
+    var tx2 = TransactionService.CreateTransaction(walletAlice.PublicKey, walletBob.PublicKey, 200m, walletAlice.PrivateKey);
+    blockChainService.AddTransaction(tx2);
+}
+catch(Exception ex)
+{
+    Console.WriteLine($"Error: {ex.Message}");
+}
+
+var aliceBalanceInMempool2 = blockChainService.GetBalance(walletAlice.PublicKey);
+Console.WriteLine("\n--------Testing overspending--------\n");
+try
+{
+    var overspentAmount = aliceBalanceInMempool2 + 1m;
+    var tx3 = TransactionService.CreateTransaction(walletAlice.PublicKey, walletBob.PublicKey, overspentAmount, walletAlice.PrivateKey);
+    blockChainService.AddTransaction(tx3);
+}
+catch(Exception ex)
+{
+    Console.WriteLine($"Overspend blocked: {ex.Message}");
+}
+
+Console.WriteLine($"\n--------Processing transactions--------\n");
+blockChainService.MineBlock(walletBob.PublicKey);
+blockChainService.MineBlock(walletBob.PublicKey);
+
+Console.WriteLine($"Alice balance: {blockChainService.GetBalance(walletAlice.PublicKey)}");
+Console.WriteLine($"Bob balance: {blockChainService.GetBalance(walletBob.PublicKey)}");
+
+var balanceBob = blockChainService.GetBalance(walletBob.PublicKey);
+
+displayService.DisplayBlockChain(blockChainService.Chain);
+Console.WriteLine(blockChainService.AnalyzeChain());
+Console.WriteLine($"Total supply: {blockChainService.GetTotalSupply()}");
+
+Console.WriteLine("\nClearing the blances...");
+blockChainService.BalancesCash.Clear();
+
+var rebuiltBalanceAlice = blockChainService.GetBalance(walletAlice.PublicKey);
+Console.WriteLine($"Balance of Alice after clearing: {rebuiltBalanceAlice}");
+
+Console.WriteLine("\nRebuilding the state...");
+blockChainService.RebuildState();
+
+var rebuiltBalanceAlice2 = blockChainService.GetBalance(walletAlice.PublicKey);
+Console.WriteLine($"Balance of Alice after rebuilding: {rebuiltBalanceAlice2}");
+
+var rebuiltBalanceBob = blockChainService.GetBalance(walletBob.PublicKey);
+
+Console.WriteLine(blockChainService.AnalyzeChain());
+Console.WriteLine($"Rebuilt balance of Alice: {rebuiltBalanceAlice2}");
+Console.WriteLine($"Rebuilt balance of Bob: {rebuiltBalanceBob}");
+Console.WriteLine($"Total supply: {blockChainService.GetTotalSupply()}");
+
 /*do
 {
     Console.WriteLine("Enter mining Difficulty (e.g. '2'):");

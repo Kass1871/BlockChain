@@ -7,6 +7,11 @@ namespace BlockChainP34.Services
         public List<Block> Chain { get; set; }
         private HashingService _hashingService;
         private MiningService _miningService;
+        private decimal initialMiningReward = 50;
+        private int halveRewardInterval = 5;
+        private List<Transaction> PendingTransactions;
+
+        public readonly Dictionary<string, decimal> BalancesCash = new Dictionary<string, decimal>();
 
         private readonly double _targetBlockTimeSeconds = 1;
         private readonly int _difficultyAdjustmentInterval = 3;
@@ -18,8 +23,27 @@ namespace BlockChainP34.Services
             _hashingService = new HashingService();
             _miningService = new MiningService(_hashingService);
             Chain = new List<Block>();
+            PendingTransactions = new List<Transaction>();
             this.Difficulty = Difficulty;
             AddGenesisBlock();
+        }
+
+        public void AddTransaction(Transaction tx)
+        {
+            var isValid = TransactionService.ValidateTransaction(tx);
+            if(!isValid.IsValid)
+            {
+                throw new Exception($"Invalid transaction: {isValid.error}");
+            }
+            if(PendingTransactions.Any(t => t.Signature == tx.Signature))
+            {
+                throw new Exception("Transaction with the same Id already exists. Rejected.");
+            }
+            if (GetBalance(tx.From) < tx.Amount)
+            {
+                throw new Exception("Insufficient balance to perform transaction.");
+            }
+            PendingTransactions.Add(tx);
         }
 
         private void AddGenesisBlock()
@@ -29,24 +53,34 @@ namespace BlockChainP34.Services
             Chain.Add(block);
         }
 
-        public void AddBlock(List<Transaction> transactions, string author)
+        public void MineBlock(string minerAddress)
         {
-            foreach(var tx in transactions)
+            foreach (var tx in PendingTransactions)
             {
                 var isValid = TransactionService.ValidateTransaction(tx);
                 if (!isValid.IsValid)
                 {
-                    Console.WriteLine($"Invalid transaction: {isValid.error}");
-                    return;
+                    throw new Exception("Invalid transaction in pending transactions. Mining aborted. Error: " + isValid.error);
                 }
             }
+
             var lastBlock = Chain.Last();
-            var newBlock = new Block(lastBlock.Index + 1, author, transactions, lastBlock.Hash, DateTime.UtcNow, Difficulty);
+            var nextIndex = lastBlock.Index + 1;
+            var halvings = nextIndex / halveRewardInterval;
+
+            var reward = initialMiningReward / (decimal)Math.Pow(2, halvings);
+            var rewardTransaction = new Transaction("COINBASE", minerAddress, reward);
+
+            var transactions = new List<Transaction>(PendingTransactions) { rewardTransaction };
+            var newBlock = new Block(nextIndex, minerAddress, transactions, lastBlock.Hash, DateTime.UtcNow, Difficulty);
 
             _miningService.MineBlock(newBlock, Difficulty);
-            Chain.Add(newBlock);
 
-            if(newBlock.Index % _difficultyAdjustmentInterval == 0)
+            Chain.Add(newBlock);
+            UpdateBalances(newBlock);
+            PendingTransactions.Clear();
+
+            if (newBlock.Index % _difficultyAdjustmentInterval == 0)
             {
                 AdjustDifficulty();
             }
@@ -188,6 +222,73 @@ namespace BlockChainP34.Services
             if (hasError) return $"Chain is invalid. Errors can be seen above.\n";
             Console.ForegroundColor = ConsoleColor.White;
             return $"Chain is valid with {Chain.Count} blocks. Last block hash: {Chain.Last().Hash}";
+        }
+
+        public decimal GetBalance(string publicKey)
+        {
+            var balance = 0m;
+            if(BalancesCash.TryGetValue(publicKey, out decimal confirmedBalance))
+            {
+                balance = confirmedBalance;
+            }
+
+            foreach (var ptx in PendingTransactions)
+            {
+                if (ptx.From == publicKey)
+                {
+                    balance -= ptx.Amount;
+                }
+                if (ptx.To == publicKey)
+                {
+                    balance += ptx.Amount;
+                }
+            }
+            return balance;
+        }
+
+        private void UpdateBalances(Block block)
+        {
+            foreach (var tx in block.Transactions)
+            {
+                if(tx.From != "COINBASE")
+                {
+                    if (!BalancesCash.ContainsKey(tx.From))
+                    {
+                        BalancesCash[tx.From] = 0;
+                    }
+                    BalancesCash[tx.From] -= tx.Amount;
+                }
+                if(!BalancesCash.ContainsKey(tx.To))
+                {
+                    BalancesCash[tx.To] = 0;
+                }
+                BalancesCash[tx.To] += tx.Amount;
+            }
+        }
+
+        public void RebuildState()
+        {
+            BalancesCash.Clear();
+            foreach (var block in Chain)
+            {
+                UpdateBalances(block);
+            }
+        }
+
+        public decimal GetTotalSupply()
+        {
+            decimal totalSupply = 0;
+            foreach(var block in Chain)
+            {
+                foreach (var transaction in block.Transactions)
+                {
+                    if (transaction.From == "COINBASE")
+                    {
+                        totalSupply += transaction.Amount;
+                    }
+                }
+            }
+            return totalSupply;
         }
     }
 }
