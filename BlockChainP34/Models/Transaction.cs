@@ -13,21 +13,24 @@ namespace BlockChainP34.Models
         public string To { get; set; }
         public byte[] Signature { get; set; }
         public decimal Amount { get; set; }
+        public decimal Fee { get; set; }
         public DateTime TimeStamp { get; set; } = DateTime.UtcNow;
-        public Transaction(string from, string to, decimal amouunt)
+        public Transaction() { }
+        public Transaction(string from, string to, decimal amouunt, decimal fee)
         {
             Id = Guid.NewGuid().ToString();
             From = from;
             To = to;
             Amount = amouunt;
+            Fee = fee;
         }
         public string ToRawString()
         {
-            return $"{From} pays {To} {Amount} ETH at {TimeStamp:O}";
+            return $"{From} pays {To} {Amount} ETH with {Fee} ETH fee at {TimeStamp:O}";
         }
         public override string ToString()
         {
-            return $"Transaction ID: {Id}, From: {From}, To: {To}, Amount: {Amount} ETH, TimeStamp: {TimeStamp:O}";
+            return $"Transaction ID: {Id}\nFrom: {From}\nTo: {To}\nAmount: {Amount}\nETH, Fee: TimeStamp: {TimeStamp:O}\n";
         }
     }
 }

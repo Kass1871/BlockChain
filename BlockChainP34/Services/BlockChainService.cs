@@ -9,7 +9,9 @@ namespace BlockChainP34.Services
         private MiningService _miningService;
         private decimal initialMiningReward = 50;
         private int halveRewardInterval = 5;
-        private List<Transaction> PendingTransactions;
+        public List<Transaction> PendingTransactions;
+        public readonly int MaxTransactionsPerBlock = 10;
+        public decimal NetworkBaseFee { get; set; } = 1.0m;
 
         public readonly Dictionary<string, decimal> BalancesCash = new Dictionary<string, decimal>();
 
@@ -30,6 +32,8 @@ namespace BlockChainP34.Services
 
         public void AddTransaction(Transaction tx)
         {
+            var currentBalance = GetBalance(tx.From);
+            var totalPendingAmount = PendingTransactions.Where(t => t.From == tx.From).Sum(t => t.Amount + t.Fee);
             var isValid = TransactionService.ValidateTransaction(tx);
             if(!isValid.IsValid)
             {
@@ -39,9 +43,21 @@ namespace BlockChainP34.Services
             {
                 throw new Exception("Transaction with the same Id already exists. Rejected.");
             }
-            if (GetBalance(tx.From) < tx.Amount)
+            /*if (currentBalance < tx.Amount+tx.Fee)
             {
                 throw new Exception("Insufficient balance to perform transaction.");
+            }*/
+            /*if (currentBalance - totalPendingAmount < tx.Amount + tx.Fee)
+            {
+                throw new Exception("Insufficient balance to perform transaction considering pending transactions.");
+            }*/
+            if(PendingTransactions.Count(t => t.From == tx.From) >= 3)
+            {
+                throw new Exception("Spam detected! Too many pending transactions from this address");
+            }
+            if(tx.Fee < NetworkBaseFee)
+            {
+                throw new Exception($"Transaction fee must be at least {NetworkBaseFee}.");
             }
             PendingTransactions.Add(tx);
         }
@@ -55,13 +71,11 @@ namespace BlockChainP34.Services
 
         public void MineBlock(string minerAddress)
         {
-            foreach (var tx in PendingTransactions)
+            var ptxToInclude = PendingTransactions.OrderByDescending(t => t.Fee).Take(MaxTransactionsPerBlock).ToList();
+            var ptxToRemove = PendingTransactions.Where(t => t.TimeStamp < DateTime.UtcNow.AddSeconds(-5)).ToList();
+            foreach(var ptx in ptxToRemove)
             {
-                var isValid = TransactionService.ValidateTransaction(tx);
-                if (!isValid.IsValid)
-                {
-                    throw new Exception("Invalid transaction in pending transactions. Mining aborted. Error: " + isValid.error);
-                }
+                ptxToInclude.Remove(ptx);
             }
 
             var lastBlock = Chain.Last();
@@ -69,9 +83,13 @@ namespace BlockChainP34.Services
             var halvings = nextIndex / halveRewardInterval;
 
             var reward = initialMiningReward / (decimal)Math.Pow(2, halvings);
-            var rewardTransaction = new Transaction("COINBASE", minerAddress, reward);
+            var totalTips = ptxToInclude.Sum(t => t.Fee - NetworkBaseFee);
+            var totalReward = reward + totalTips;
 
-            var transactions = new List<Transaction>(PendingTransactions) { rewardTransaction };
+            var rewardTransaction = new Transaction("COINBASE", minerAddress, totalReward, 0);
+            ptxToInclude.Insert(0, rewardTransaction);
+
+            var transactions = new List<Transaction>(ptxToInclude);
             var newBlock = new Block(nextIndex, minerAddress, transactions, lastBlock.Hash, DateTime.UtcNow, Difficulty);
 
             _miningService.MineBlock(newBlock, Difficulty);
@@ -146,8 +164,6 @@ namespace BlockChainP34.Services
             }
         }
 
-        //Difficulty = Math.Clamp(Difficulty + change, 1, 6);
-
         public string PrintDifficultyHistory()
         {
             Console.WriteLine("Block Difficulty History:");
@@ -160,19 +176,19 @@ namespace BlockChainP34.Services
             return new string('=', 50);
         }
 
-        public bool IsValid()
+        public bool IsValid(List<Block> newChain)
         {
-            if (Chain.Count == 0) return false;
+            if (newChain.Count == 0) return false;
 
-            var genesis = Chain[0];
+            var genesis = newChain[0];
             if (genesis.Index != 0) return false;
             if (genesis.PreviousHash != "0") return false;
             if (genesis.Hash != _hashingService.ComputeHash(genesis)) return false;
 
-            for (int i = 1; i < Chain.Count; i++)
+            for (int i = 1; i < newChain.Count; i++)
             {
-                var currentBlock = Chain[i];
-                var previousBlock = Chain[i - 1];
+                var currentBlock = newChain[i];
+                var previousBlock = newChain[i - 1];
                 if (currentBlock.Hash != _hashingService.ComputeHash(currentBlock))
                     return false;
                 if (currentBlock.PreviousHash != previousBlock.Hash)
@@ -256,7 +272,7 @@ namespace BlockChainP34.Services
                     {
                         BalancesCash[tx.From] = 0;
                     }
-                    BalancesCash[tx.From] -= tx.Amount;
+                    BalancesCash[tx.From] -= tx.Amount + tx.Fee;
                 }
                 if(!BalancesCash.ContainsKey(tx.To))
                 {
@@ -289,6 +305,85 @@ namespace BlockChainP34.Services
                 }
             }
             return totalSupply;
+        }
+        public decimal GetTotalBurnedFees()
+        {
+            var totalBurnedFees = 0m;
+            foreach(var block in Chain)
+            {
+                totalBurnedFees += block.Transactions.Where(x=>x.Fee>0).Sum(t => t.Fee - NetworkBaseFee);
+            }
+            return totalBurnedFees;
+        }
+        public decimal GetActualTotalSupply()
+        {
+            return GetTotalSupply() - GetTotalBurnedFees();
+        }
+        public void ReplaceChain(List<Block> newChain)
+        {
+            var chainCopy = new List<Block>(Chain);
+            if (newChain.Count <= Chain.Count)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("New chain is not longer than the current chain.");
+                Console.ForegroundColor = ConsoleColor.White;
+                return;
+            }
+            if (!IsValid(newChain))
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("New chain is invalid");
+                Console.ForegroundColor = ConsoleColor.White;
+                return;
+            }
+            if(newChain.Sum(x=>x.DifficultyAtMining) > Chain.Sum(x => x.DifficultyAtMining)) {
+                Console.ForegroundColor = ConsoleColor.Blue;
+                Console.WriteLine($"[Audit] Our node was living in the past! We're off by {newChain.Count - Chain.Count} blocks.");
+                Console.ForegroundColor = ConsoleColor.White;
+                Chain = newChain;
+            } else
+            {
+                 Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"[Audit] New chain has more blocks but less total difficulty. This might be a sign of a potential attack or a network issue. Proceeding with caution.");
+                Console.ForegroundColor = ConsoleColor.White;
+                return;
+            }
+            var BalanceesCashCopy = BalancesCash.ToDictionary(entry => entry.Key, entry => entry.Value);
+
+            BalancesCash.Clear();
+            foreach(var block in Chain)
+            {
+                UpdateBalances(block);
+            }
+            foreach (var balance in BalanceesCashCopy)
+            {
+                var balanceOld = balance.Value;
+                var balanceNew = BalancesCash.ContainsKey(balance.Key) ? BalancesCash[balance.Key] : 0;
+                if (balanceOld > balanceNew)
+                {
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.WriteLine($"[Balance Audit] Warning! User {balance.Key} suddenly lost {balanceOld - balanceNew} coins due to the network backup!");
+                    Console.ForegroundColor = ConsoleColor.White;
+                }
+            }
+            foreach(var block in chainCopy)
+            {
+                foreach(var tx in block.Transactions)
+                {
+                    if(!Chain.Any(b => b.Transactions.Any(t => t.Id == tx.Id)) && tx.From != "System")
+                    {
+                        Console.ForegroundColor= ConsoleColor.Red;
+                        Console.WriteLine($"[Alarm] Transaction {tx.Id} was erased from history! Transaction canceled.");
+                        Console.ForegroundColor = ConsoleColor.White;
+                    }
+                }
+            }
+
+            var minedTxId = Chain.SelectMany(tr => tr.Transactions).Select(x => x.Id).ToHashSet();
+            PendingTransactions.RemoveAll(tx => minedTxId.Contains(tx.Id));
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine("Chain replaced with a new longer and more difficult chain.");
+            Console.ForegroundColor = ConsoleColor.White;
         }
     }
 }
