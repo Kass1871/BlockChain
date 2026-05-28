@@ -1,4 +1,6 @@
-﻿using BlockChainP34.Models;
+﻿using System.Text.Json;
+using System.IO;
+using BlockChainP34.Models;
 
 namespace BlockChainP34.Services
 {
@@ -13,7 +15,7 @@ namespace BlockChainP34.Services
         public readonly int MaxTransactionsPerBlock = 10;
         public decimal NetworkBaseFee { get; set; } = 1.0m;
 
-        public readonly Dictionary<string, decimal> BalancesCash = new Dictionary<string, decimal>();
+        public Dictionary<string, decimal> BalancesCash = new Dictionary<string, decimal>();
 
         private readonly double _targetBlockTimeSeconds = 1;
         private readonly int _difficultyAdjustmentInterval = 3;
@@ -252,7 +254,7 @@ namespace BlockChainP34.Services
             {
                 if (ptx.From == publicKey)
                 {
-                    balance -= ptx.Amount;
+                    balance -= ptx.Amount + ptx.Fee;
                 }
                 if (ptx.To == publicKey)
                 {
@@ -384,6 +386,49 @@ namespace BlockChainP34.Services
             Console.ForegroundColor = ConsoleColor.Green;
             Console.WriteLine("Chain replaced with a new longer and more difficult chain.");
             Console.ForegroundColor = ConsoleColor.White;
+        }
+
+        public void SaveStateSnapshot()
+        {
+            var jsonBalnaces = JsonSerializer.Serialize(BalancesCash);
+            File.WriteAllText("state.json", jsonBalnaces);
+        }
+        public void LoadStateSnapshot()
+        {
+            if (File.Exists("state.json"))
+            {
+                var json = File.ReadAllText("state.json");
+                BalancesCash = JsonSerializer.Deserialize<Dictionary<string, decimal>>(json) ?? new Dictionary<string, decimal>();
+            }
+            else
+            {
+                RebuildState();
+            }
+        }
+
+        public decimal GetBalanceOld(string publicKey)
+        {
+            decimal balance = 0m;
+            foreach(var block in Chain)
+            {
+                foreach(var tx in block.Transactions)
+                {
+                    if(tx.From == publicKey)
+                    {
+                        balance -= tx.Amount + tx.Fee;
+                    }
+                    if(tx.To == publicKey)
+                    {
+                        balance += tx.Amount;
+                    }
+                }
+            }
+            return balance;
+        }
+
+        public decimal GetBalanceNew(string publicKey)
+        {
+            return BalancesCash.TryGetValue(publicKey, out decimal balance) ? balance : 0m;
         }
     }
 }

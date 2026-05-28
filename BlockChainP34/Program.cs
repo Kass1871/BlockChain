@@ -1,4 +1,5 @@
-﻿using BlockChainP34.Models;
+﻿using System.Diagnostics;
+using BlockChainP34.Models;
 using BlockChainP34.Services;
 using BlockChainP34.Services.P2P;
 using Microsoft.Extensions.DependencyInjection;
@@ -38,6 +39,7 @@ while (true)
     Console.WriteLine("4. Mine block");
     Console.WriteLine("5. Check my balance");
     Console.WriteLine("6. Show blockchain");
+    Console.WriteLine("8. Test old and new dictionary methods.");
     Console.WriteLine("9. Test stuff");
     Console.WriteLine("0. Exit");
 
@@ -80,7 +82,7 @@ while (true)
             blockChainService.MineBlock(myWallet.PublicKey);
             break;
         case "5":
-            Console.WriteLine($"Your balance: {blockChainService.GetBalance(myWallet.PublicKey)}");
+            Console.WriteLine($"Your balance: {blockChainService.GetBalanceNew(myWallet.PublicKey)}");
             break;
         case "6":
             displayService.DisplayBlockChain(blockChainService.Chain);
@@ -88,6 +90,35 @@ while (true)
         case "0":
             Console.WriteLine("Exiting...");
             return;
+        case "8":
+            Console.WriteLine("10000 fake transactions creation started...");
+            for(int i = 0; i < 10000; i++) {
+                TransactionService.CreateTransaction(myWallet.PublicKey, "RandomReceiver", 1, fee: 1, myWallet.PrivateKey);
+            }
+            while(blockChainService.PendingTransactions.Count > 0)
+            {
+                blockChainService.MineBlock(myWallet.PublicKey);
+            }
+            decimal balanceOld = 0;
+            var swOld = Stopwatch.StartNew();
+            for (int i = 0; i < 10000; i++)
+            {
+                balanceOld += blockChainService.GetBalanceOld(myWallet.PublicKey);
+            }
+            swOld.Stop();
+
+            decimal balanceNew = 0;
+            var swNew = Stopwatch.StartNew();
+            for (int i = 0; i < 10000; i++)
+            {
+                balanceNew += blockChainService.GetBalanceNew(myWallet.PublicKey);
+            }
+            swNew.Stop();
+            Console.WriteLine($"Old method duration: {swOld.Elapsed.TotalMilliseconds:F5} ms");
+            Console.WriteLine($"New method duration: {swNew.Elapsed.TotalMilliseconds:F5} ms");
+
+            Console.WriteLine($"Old: {swOld.Elapsed.TotalMilliseconds:F5} ms; \nNew: {swNew.Elapsed.TotalMilliseconds:F5} ms");
+            break;
         case "9":
             for (int i = 0; i < 5; i++)
             {
