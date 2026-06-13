@@ -15,6 +15,9 @@ namespace BlockChainP34.Services
             {
                 var publicKey = Convert.ToBase64String(rsa.ExportRSAPublicKey());
                 var privateKey = Convert.ToBase64String(rsa.ExportRSAPrivateKey());
+
+
+
                 return (publicKey, privateKey);
             }
         }
@@ -32,9 +35,16 @@ namespace BlockChainP34.Services
         {
             using (var rsa = RSA.Create())
             {
-                rsa.ImportRSAPublicKey(Convert.FromBase64String(publicKey), out _);
-                var dataBytes = Encoding.UTF8.GetBytes(data);
-                return rsa.VerifyData(dataBytes, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+                try
+                {
+                    rsa.ImportRSAPublicKey(Convert.FromBase64String(publicKey), out _);
+                    var dataBytes = Encoding.UTF8.GetBytes(data);
+                    return rsa.VerifyData(dataBytes, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+                }
+                catch (Exception ex)
+                {
+                    throw new Exception($"Error caught: {ex.Message}");
+                }
             }
         }
     }

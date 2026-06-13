@@ -9,11 +9,13 @@ namespace BlockChainP34.Services
         public List<Block> Chain { get; set; }
         private HashingService _hashingService;
         private MiningService _miningService;
+        private readonly StorageService _storageService;
         private decimal initialMiningReward = 50;
         private int halveRewardInterval = 5;
         public List<Transaction> PendingTransactions;
         public readonly int MaxTransactionsPerBlock = 10;
         public decimal NetworkBaseFee { get; set; } = 1.0m;
+        public TimeSpan TransactionTtl = TimeSpan.FromSeconds(5);
 
         public Dictionary<string, decimal> BalancesCash = new Dictionary<string, decimal>();
 
@@ -22,14 +24,29 @@ namespace BlockChainP34.Services
 
         public int Difficulty = 1;
 
-        public BlockChainService(int Difficulty)
+        public BlockChainService(StorageService storageService, HashingService hashingService, MiningService miningService)
         {
-            _hashingService = new HashingService();
-            _miningService = new MiningService(_hashingService);
+            _hashingService = hashingService;
+            _miningService = miningService;
             Chain = new List<Block>();
             PendingTransactions = new List<Transaction>();
-            this.Difficulty = Difficulty;
             AddGenesisBlock();
+            _storageService = storageService;
+
+            var loadedChain = _storageService.LoadStateSnapshot();
+            if(loadedChain != null && loadedChain.Count > 0)
+            {
+                if (IsValid(loadedChain))
+                {
+                    Chain = loadedChain;
+                    RebuildState();
+                    Console.WriteLine("Loaded blockchain state from snapshot.");
+                }
+                else
+                {
+                    Console.WriteLine("Loaded blockchain state is invalid. Starting with a new chain.");
+                }
+            }
         }
 
         public void AddTransaction(Transaction tx)
@@ -45,21 +62,16 @@ namespace BlockChainP34.Services
             {
                 throw new Exception("Transaction with the same Id already exists. Rejected.");
             }
-            /*if (currentBalance < tx.Amount+tx.Fee)
-            {
-                throw new Exception("Insufficient balance to perform transaction.");
-            }*/
-            /*if (currentBalance - totalPendingAmount < tx.Amount + tx.Fee)
-            {
-                throw new Exception("Insufficient balance to perform transaction considering pending transactions.");
-            }*/
             if(PendingTransactions.Count(t => t.From == tx.From) >= 3)
             {
-                throw new Exception("Spam detected! Too many pending transactions from this address");
+                throw new InvalidOperationException($"Spam detected! Too many pending transactions from this address: {tx.From}");
             }
             if(tx.Fee < NetworkBaseFee)
             {
                 throw new Exception($"Transaction fee must be at least {NetworkBaseFee}.");
+            }
+            if(tx.TimeStamp > DateTime.UtcNow.AddMinutes(5)){
+                throw new Exception("Transaction timestamp is too far in the future.");
             }
             PendingTransactions.Add(tx);
         }
@@ -73,12 +85,9 @@ namespace BlockChainP34.Services
 
         public void MineBlock(string minerAddress)
         {
-            var ptxToInclude = PendingTransactions.OrderByDescending(t => t.Fee).Take(MaxTransactionsPerBlock).ToList();
-            var ptxToRemove = PendingTransactions.Where(t => t.TimeStamp < DateTime.UtcNow.AddSeconds(-5)).ToList();
-            foreach(var ptx in ptxToRemove)
-            {
-                ptxToInclude.Remove(ptx);
-            }
+            EvictStaleTransactions();
+            var ptxToInclude = PendingTransactions.Where(t => !t.LockTime.HasValue || t.LockTime.Value <= Chain.Count).OrderByDescending(t => t.Amount).ThenByDescending(t => t.Fee).Take(MaxTransactionsPerBlock).ToList();
+            var includedIds = ptxToInclude.Select(t => t.Id).ToHashSet();
 
             var lastBlock = Chain.Last();
             var nextIndex = lastBlock.Index + 1;
@@ -93,17 +102,20 @@ namespace BlockChainP34.Services
 
             var transactions = new List<Transaction>(ptxToInclude);
             var newBlock = new Block(nextIndex, minerAddress, transactions, lastBlock.Hash, DateTime.UtcNow, Difficulty);
+            newBlock.MerkleRoot = _hashingService.BuildMerkleRoot(transactions);
 
             _miningService.MineBlock(newBlock, Difficulty);
 
             Chain.Add(newBlock);
             UpdateBalances(newBlock);
-            PendingTransactions.Clear();
+            PendingTransactions.RemoveAll(t => includedIds.Contains(t.Id));
 
             if (newBlock.Index % _difficultyAdjustmentInterval == 0)
             {
                 AdjustDifficulty();
             }
+
+            _storageService.SaveStateSnapshot(Chain);
         }
 
         private void AdjustDifficulty()
@@ -180,6 +192,7 @@ namespace BlockChainP34.Services
 
         public bool IsValid(List<Block> newChain)
         {
+            var tempBalances = new Dictionary<string, decimal>();
             if (newChain.Count == 0) return false;
 
             var genesis = newChain[0];
@@ -189,14 +202,49 @@ namespace BlockChainP34.Services
 
             for (int i = 1; i < newChain.Count; i++)
             {
+                // POW - validate hash, previous hash link and difficulty requirement
                 var currentBlock = newChain[i];
                 var previousBlock = newChain[i - 1];
-                if (currentBlock.Hash != _hashingService.ComputeHash(currentBlock))
-                    return false;
-                if (currentBlock.PreviousHash != previousBlock.Hash)
-                    return false;
-                if (!currentBlock.Hash.StartsWith(new String('0', currentBlock.DifficultyAtMining)))
-                    return false;
+                if (currentBlock.Hash != _hashingService.ComputeHash(currentBlock)) return false;
+                if (currentBlock.PreviousHash != previousBlock.Hash) return false;
+                if (!currentBlock.Hash.StartsWith(new String('0', currentBlock.DifficultyAtMining))) return false;
+
+                // Validate transactions
+                foreach(var transaction in currentBlock.Transactions)
+                {
+                    var validateResult = TransactionService.ValidateTransaction(transaction);
+                    if (!validateResult.IsValid)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine($"[CRITICAL] tampered transaction detected in block #{currentBlock.Index}: {validateResult.error}");
+                        Console.ForegroundColor = ConsoleColor.White;
+
+                        File.AppendAllText("security_alerts.txt", $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}]\nATTACK DETECTED!\nTampered transaction at ID: {transaction.Id}\nAttacker tried to change amount to {transaction.Amount}" + Environment.NewLine);
+                        return false;
+                    }
+                    if(transaction.From != "COINBASE")
+                    {
+                        decimal senderBalance = tempBalances.ContainsKey(transaction.From) ? tempBalances[transaction.From] : 0;
+                        if(senderBalance < transaction.Amount + transaction.Fee)
+                        {
+                            Console.ForegroundColor = ConsoleColor.Red;
+                            Console.WriteLine($"[CRITICAL] double spending or balance tampering detected in block #{currentBlock.Index} for address {transaction.From}");
+                            Console.ForegroundColor = ConsoleColor.White;
+                            File.AppendAllText("security_alerts.txt", $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}]\nATTACK DETECTED!\nDouble spending or balance tampering for address: {transaction.From}\nAttempted amount: {transaction.Amount + transaction.Fee}" + Environment.NewLine);
+                            return false;
+                        }
+                        tempBalances[transaction.From] = senderBalance - transaction.Amount - transaction.Fee;
+                    }
+                    if (!tempBalances.ContainsKey(transaction.From))
+                    {
+                        tempBalances[transaction.From] = 0;
+                    }
+                    if (!tempBalances.ContainsKey(transaction.To))
+                    {
+                        tempBalances[transaction.To] = 0;
+                    }
+                    tempBalances[transaction.To] += transaction.Fee;
+                }
             }
             return true;
         }
@@ -264,7 +312,7 @@ namespace BlockChainP34.Services
             return balance;
         }
 
-        private void UpdateBalances(Block block)
+        public void UpdateBalances(Block block)
         {
             foreach (var tx in block.Transactions)
             {
@@ -342,6 +390,56 @@ namespace BlockChainP34.Services
                 Console.ForegroundColor = ConsoleColor.Blue;
                 Console.WriteLine($"[Audit] Our node was living in the past! We're off by {newChain.Count - Chain.Count} blocks.");
                 Console.ForegroundColor = ConsoleColor.White;
+
+                var orphanTransactions = new List<Transaction>();
+                var forkPoint = chainCopy.Count();
+
+                for(int i = 0; i < chainCopy.Count; i++)
+                {
+                    if (chainCopy[i].Hash == newChain[i].Hash) continue;
+                    else
+                    {
+                        Console.ForegroundColor = ConsoleColor.Blue;
+                        Console.WriteLine($"[Audit] Hash mismatch at index #{i} - fork point found.");
+                        Console.ForegroundColor = ConsoleColor.White;
+                        forkPoint = i;
+                        break;
+                    }
+                }
+                if(forkPoint == chainCopy.Count())
+                {
+                    Console.ForegroundColor = ConsoleColor.Blue;
+                    Console.WriteLine("[Audit] No fork point found, new chain extends the old one.");
+                    Console.ForegroundColor = ConsoleColor.White;
+                }
+                for( int i = forkPoint; i < chainCopy.Count; i++)
+                {
+                    var txToInc = chainCopy[i].Transactions.Where(t => t.From != "COINBASE" && t.From != "System").ToList();
+                    orphanTransactions.AddRange(txToInc);
+                }
+                var newChainTxIds = newChain.SelectMany(tr => tr.Transactions).Select(x => x.Id).ToHashSet();
+                var existingPendingIds = PendingTransactions.Select(t => t.Id).ToHashSet();
+
+                int rescuedTx = 0;
+                foreach (var orphanTx in orphanTransactions)
+                {
+                    if(!newChainTxIds.Contains(orphanTx.Id) && !existingPendingIds.Contains(orphanTx.Id))
+                    {
+                        PendingTransactions.Add(orphanTx);
+                        existingPendingIds.Add(orphanTx.Id);
+                        rescuedTx++;
+                        Console.ForegroundColor = ConsoleColor.Cyan;
+                        Console.WriteLine($"[Phoenix] Rescued orphan transaction {orphanTx.Id} from {orphanTx.From}.");
+                        Console.ForegroundColor = ConsoleColor.White;
+                    }
+                }
+
+                if(rescuedTx > 0)
+                {
+                    Console.ForegroundColor = ConsoleColor.Cyan;
+                    Console.WriteLine($"[Phoenix] Rescued {rescuedTx} transactions in total.");
+                    Console.ForegroundColor = ConsoleColor.White;
+                }
                 Chain = newChain;
             } else
             {
@@ -387,25 +485,6 @@ namespace BlockChainP34.Services
             Console.WriteLine("Chain replaced with a new longer and more difficult chain.");
             Console.ForegroundColor = ConsoleColor.White;
         }
-
-        public void SaveStateSnapshot()
-        {
-            var jsonBalnaces = JsonSerializer.Serialize(BalancesCash);
-            File.WriteAllText("state.json", jsonBalnaces);
-        }
-        public void LoadStateSnapshot()
-        {
-            if (File.Exists("state.json"))
-            {
-                var json = File.ReadAllText("state.json");
-                BalancesCash = JsonSerializer.Deserialize<Dictionary<string, decimal>>(json) ?? new Dictionary<string, decimal>();
-            }
-            else
-            {
-                RebuildState();
-            }
-        }
-
         public decimal GetBalanceOld(string publicKey)
         {
             decimal balance = 0m;
@@ -425,10 +504,123 @@ namespace BlockChainP34.Services
             }
             return balance;
         }
-
         public decimal GetBalanceNew(string publicKey)
         {
             return BalancesCash.TryGetValue(publicKey, out decimal balance) ? balance : 0m;
+        }
+        public class AuditReport
+        {
+            public bool IsChainValid { get; set; }
+            public List<int> CompromisedBlockIndexes { get; set; } = new();
+            public Dictionary<int, List<string>> ViolationDetails { get; set; } = new();
+            // ViolationDetails: ключ = індекс блоку, значення = список рядків з описом порушень
+        }
+        public AuditReport RunFullAudit(List<Block> chain)
+        {
+            if(chain == null || chain.Count == 0)
+            {
+                return new AuditReport { IsChainValid = false };
+            }
+
+            var report = new AuditReport();
+            foreach(var block in chain)
+            {
+                if(!report.ViolationDetails.ContainsKey(block.Index))report.ViolationDetails[block.Index] = new List<string>();
+
+                if (block.Index > 0)
+                {
+                    var previousBlock = chain.FirstOrDefault(b => b.Hash == block.PreviousHash);
+                    if (block.Hash == null || block.PreviousHash != previousBlock.Hash)
+                    {
+                        report.IsChainValid = false;
+                        if (!report.CompromisedBlockIndexes.Contains(block.Index)) report.CompromisedBlockIndexes.Add(block.Index);
+                        report.ViolationDetails[block.Index].Add("Previous hash mismatch - chain link broken");
+                    }
+                    var allTransactions = block.Transactions;
+                    if (block.MerkleRoot != _hashingService.BuildMerkleRoot(allTransactions))
+                    {
+                        report.IsChainValid = false;
+                        if (!report.CompromisedBlockIndexes.Contains(block.Index)) report.CompromisedBlockIndexes.Add(block.Index);
+                        report.ViolationDetails[block.Index].Add("Merkle root mismatch - transactions tampered");
+                    }
+                    if (!block.Hash.StartsWith(new String('0', block.DifficultyAtMining)))
+                    {
+                        report.IsChainValid = false;
+                        if (!report.CompromisedBlockIndexes.Contains(block.Index)) report.CompromisedBlockIndexes.Add(block.Index);
+                        report.ViolationDetails[block.Index].Add("Hash does not meet difficulty requirement - possible tampering with nonce or mining duration");
+                    }
+                }
+            }
+            report.IsChainValid = report.CompromisedBlockIndexes.Count == 0;
+            return report;
+        }
+
+        public Block FindAttackOrigin(AuditReport report, List<Block> chain)
+        {
+            foreach(var block in chain.OrderBy(b => b.Index))
+            {
+                if(!report.ViolationDetails.TryGetValue(block.Index, out List<string> violations)) continue;
+
+                bool hasNonHashViolation = violations.Any(v => v.Contains("Merkle root mismatch") || v.Contains("Hash does not meet difficulty requirement"));
+                if (hasNonHashViolation) return block;
+            }
+            return null;
+        }
+
+        public string GenerateForensicReport(AuditReport report, Block attackOrigin)
+        {
+            var forensicReport = new System.Text.StringBuilder();
+
+            forensicReport.AppendLine("=== FORENSIC REPORT ===");
+            forensicReport.AppendLine($"Chain status: {(report.IsChainValid ? "VALID" : "COMPROMISED")}");
+            forensicReport.AppendLine($"Attack origin: Block #{attackOrigin.Index} (timestamp: {attackOrigin.Timestamp})");
+            forensicReport.AppendLine($"Total affected blocks: {report.CompromisedBlockIndexes.Count}");
+            forensicReport.AppendLine();
+            forensicReport.AppendLine("VIOLATION LOG:");
+            foreach(var block in report.CompromisedBlockIndexes)
+            {
+                forensicReport.AppendLine($"[Block #{block}]");
+                if (report.ViolationDetails.TryGetValue(block, out List<string> violations))
+                {
+                    foreach (var violation in violations)
+                    {
+                        forensicReport.Append($" - {violation}");
+                    }
+                }
+            }
+            return forensicReport.ToString();
+        }
+
+        public bool ValidateAndRebuildState()
+        {
+            BalancesCash.Clear();
+            foreach (var block in Chain)
+            {
+                UpdateBalances(block);
+            }
+            if(BalancesCash.Any(kv => kv.Key != "System" && kv.Value < 0))
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("State validation failed! Negative balance detected for address: " + BalancesCash.First(kv => kv.Key != "System" && kv.Value < 0).Key);
+                Console.ForegroundColor = ConsoleColor.White;
+                BalancesCash.Clear();
+                return false;
+            }
+            return true;
+        }
+
+        public int EvictStaleTransactions()
+        {
+            var now = DateTime.UtcNow;
+            var removedCount = PendingTransactions.RemoveAll(tx => now - tx.TimeStamp > TransactionTtl);
+            if (removedCount > 0)
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine($"[TTL] Evicted {removedCount} stale transactions from the mempool.");
+                Console.ForegroundColor = ConsoleColor.White;
+            }
+            return removedCount;
+            
         }
     }
 }

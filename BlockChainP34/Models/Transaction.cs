@@ -15,14 +15,16 @@ namespace BlockChainP34.Models
         public decimal Amount { get; set; }
         public decimal Fee { get; set; }
         public DateTime TimeStamp { get; set; } = DateTime.UtcNow;
+        public int? LockTime { get; set; }
         public Transaction() { }
-        public Transaction(string from, string to, decimal amouunt, decimal fee)
+        public Transaction(string from, string to, decimal amount, decimal fee, int? locktime = null)
         {
             Id = Guid.NewGuid().ToString();
             From = from;
             To = to;
-            Amount = amouunt;
+            Amount = amount;
             Fee = fee;
+            LockTime = locktime;
         }
         public string ToRawString()
         {
@@ -30,7 +32,7 @@ namespace BlockChainP34.Models
         }
         public override string ToString()
         {
-            return $"Transaction ID: {Id}\nFrom: {From}\nTo: {To}\nAmount: {Amount}\nETH, Fee: TimeStamp: {TimeStamp:O}\n";
+            return $"Transaction ID: {Id}\nFrom: {From}\nTo: {To}\nAmount: {Amount} ETH, Fee: {Fee}\nTimeStamp: {TimeStamp:O}\nLocktime: {LockTime ?? 0}";
         }
     }
 }

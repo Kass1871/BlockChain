@@ -11,9 +11,9 @@ namespace BlockChainP34.Services
             cryptoService = new CryptoService();
         }
 
-        public static Transaction CreateTransaction(string from, string to, decimal amount, decimal fee, string privateKey)
+        public static Transaction CreateTransaction(string from, string to, decimal amount, decimal fee, string privateKey, int? lockTime = null)
         {
-            var tx = new Transaction(from, to, amount, fee);
+            var tx = new Transaction(from, to, amount, fee, lockTime);
             SignTransaction(tx, privateKey);
             var validTransaction = ValidateTransaction(tx);
             if (!validTransaction.IsValid)
@@ -29,8 +29,11 @@ namespace BlockChainP34.Services
             if (string.IsNullOrEmpty(transaction.From)) return (false, "Sender address is required");
             if (string.IsNullOrEmpty(transaction.To)) return (false, "Recepient address is required");
             if (transaction.Amount <= 0) return (false, "Amount must be greater than zero");
-            if (transaction.Signature == null || transaction.Signature.Length == 0) return (false, "Transaction must be signed.");
-            if (!cryptoService.VerifySignature(transaction.ToRawString(), transaction.Signature, transaction.From)) return (false, "Invalid transaction signature");
+            if (transaction.From != "COINBASE")
+            {
+                if (transaction.Signature == null || transaction.Signature.Length == 0) return (false, "Transaction must be signed.");
+                if (!cryptoService.VerifySignature(transaction.ToRawString(), transaction.Signature, transaction.From)) return (false, "Invalid transaction signature");
+            }
             if (transaction.Fee < 0) return (false, "Transaction can not be negative.");
 
             return (true, string.Empty);

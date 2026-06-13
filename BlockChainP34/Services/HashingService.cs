@@ -12,18 +12,42 @@ namespace BlockChainP34.Services
     {
         public string ComputeHash(Block block)
         {
-            var transactionData = string.Concat(block.Transactions.Select(t => t.ToRawString()).ToArray());
-            string rawData = $"{block.Index}{block.Author}{block.Timestamp}{transactionData}{block.PreviousHash}{block.Nonce}";
-
+            string rawData = $"{block.Index}{block.Author}{block.Timestamp}{block.MerkleRoot}{block.PreviousHash}{block.Nonce}{block.DifficultyAtMining}";
             return ComputeHash(rawData);
         }
-
         private string ComputeHash(string rawData)
         {
             byte[] inputBytes = Encoding.UTF8.GetBytes(rawData);
             byte[] hashBytes = SHA256.HashData(inputBytes);
 
             return Convert.ToHexString(hashBytes).ToLowerInvariant();
+        }
+        
+        public string BuildMerkleRoot(List<Transaction> transactions)
+        {
+            if(transactions == null || transactions.Count == 0) return string.Empty;
+            
+            var hashAllTransactions = transactions.Select(t => ComputeHash(t.ToRawString())).ToList();
+
+            while(hashAllTransactions.Count > 1)
+            {
+                var tempList = new List<string>();
+
+                for (int i = 0; i < hashAllTransactions.Count; i += 2)
+                {
+                    if(i+1 < hashAllTransactions.Count)
+                    {
+                        string combinedHash = hashAllTransactions[i] + hashAllTransactions[i + 1];
+                        tempList.Add(ComputeHash(combinedHash));
+                    }
+                    else
+                    {
+                        tempList.Add(hashAllTransactions[i]);
+                    }
+                }
+                hashAllTransactions = tempList;
+            }
+            return hashAllTransactions[0];
         }
     }
 }

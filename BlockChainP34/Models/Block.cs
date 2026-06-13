@@ -18,6 +18,7 @@ namespace BlockChainP34.Models
         public List<Transaction> Transactions { get; set; }
         // Hash of the current block 
         public string Hash { get; set; }
+        public string MerkleRoot { get; set; }
         // Hash of the previous block in the chain
         public string PreviousHash { get; set; }
         public int Nonce { get; set; }

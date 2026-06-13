@@ -1,33 +1,123 @@
 ﻿using System.Diagnostics;
+using System.Runtime.InteropServices;
 using BlockChainP34.Models;
 using BlockChainP34.Services;
 using BlockChainP34.Services.P2P;
 using Microsoft.Extensions.DependencyInjection;
 
 var service = new ServiceCollection();
-service.AddTransient<BlockChainService>(provider => new BlockChainService(Difficulty: 1));
+service.AddSingleton<BlockChainService, BlockChainService>();
 service.AddSingleton<CryptoService, CryptoService>();
 service.AddSingleton<P2PClient, P2PClient>();
 service.AddSingleton<P2PServer, P2PServer>();
 service.AddSingleton<DisplaySerivce, DisplaySerivce>();
+service.AddSingleton<StorageService, StorageService>();
+service.AddSingleton<MiningService, MiningService>();
+service.AddSingleton<HashingService, HashingService>();
+service.AddSingleton<BlockchainExplorer, BlockchainExplorer>();
 
 var provider = service.BuildServiceProvider();
 
-var blockChainService = provider.GetService<BlockChainService>();
+var blockChainService = provider.GetRequiredService<BlockChainService>();
 var newBlockChainService = provider.GetService<BlockChainService>();
+var testingBlockChainService = provider.GetService<BlockChainService>();
 var p2pClient = provider.GetService<P2PClient>();
 var p2pServer = provider.GetService<P2PServer>();
 var cryptoService = provider.GetService<CryptoService>();
 var displayService = provider.GetService<DisplaySerivce>();
+var storageService = provider.GetService<StorageService>();
+var miningService = provider.GetService<MiningService>();
+var hashingService = provider.GetService<HashingService>();
+var explorer = provider.GetService<BlockchainExplorer>();
 
 var myWallet = new Wallet(cryptoService);
+var alice = new Wallet(cryptoService);
+/*blockChainService.MineBlock(alice.PublicKey);
+blockChainService.MineBlock(alice.PublicKey);*/
+var bob = new Wallet(cryptoService);
+/*blockChainService.MineBlock(bob.PublicKey);
+blockChainService.MineBlock(bob.PublicKey);*/
+
 Console.WriteLine($"My wallet address: {myWallet.PublicKey}");
 Console.WriteLine("Enter your node's port:");
 int port = int.Parse(Console.ReadLine());
 
 p2pServer.Start(port);
 
+//Testing
+/*Console.ForegroundColor = ConsoleColor.Blue;
+Console.WriteLine("Testing amount priority.");
+Console.ForegroundColor = ConsoleColor.White;
+var tx10 = TransactionService.CreateTransaction(myWallet.PublicKey, alice.PublicKey, 10, fee: 2, myWallet.PrivateKey);
+var tx50 = TransactionService.CreateTransaction(myWallet.PublicKey, bob.PublicKey, 50, fee: 2, myWallet.PrivateKey);
+var tx20 = TransactionService.CreateTransaction(myWallet.PublicKey, bob.PublicKey, 20, fee: 2, myWallet.PrivateKey);
 
+blockChainService.AddTransaction(tx10);
+blockChainService.AddTransaction(tx50);
+blockChainService.AddTransaction(tx20);
+
+Console.WriteLine("Mempool before mining:");
+foreach (var tx in blockChainService.PendingTransactions) Console.WriteLine(tx);
+
+blockChainService.MineBlock(myWallet.PublicKey);
+Console.WriteLine("After:");
+foreach (var tx in blockChainService.PendingTransactions) Console.WriteLine(tx);
+Console.WriteLine("Blockchain:");
+displayService.DisplayBlockChain(blockChainService.Chain);
+
+Console.ForegroundColor = ConsoleColor.Blue;
+Console.WriteLine("Testing TTL.");
+Console.ForegroundColor = ConsoleColor.White;
+var txTTL = TransactionService.CreateTransaction(bob.PublicKey, alice.PublicKey, 32, fee: 2, bob.PrivateKey);
+blockChainService.AddTransaction(txTTL);
+Console.WriteLine($"Created transaction with TTL: {txTTL}");
+Console.WriteLine("Mempool after adding TTL tx:");
+foreach (var tx in blockChainService.PendingTransactions) Console.WriteLine(tx);
+Console.ForegroundColor = ConsoleColor.Blue;
+Console.WriteLine("Waiting 6 seconds to let TTL expire...");
+Console.ForegroundColor = ConsoleColor.White;
+Thread.Sleep(6000);
+Console.WriteLine("Mining block...");
+blockChainService.MineBlock(bob.PublicKey);
+displayService.DisplayBlockChain(blockChainService.Chain);
+
+Console.ForegroundColor = ConsoleColor.Blue;
+Console.WriteLine("Testing locktime.");
+Console.ForegroundColor = ConsoleColor.White;
+
+var txlock = TransactionService.CreateTransaction(bob.PublicKey, alice.PublicKey, 10, fee: 2, bob.PrivateKey, lockTime: 6);
+Console.WriteLine($"Created transaction with locktime: {txlock}");
+blockChainService.AddTransaction(txlock);
+Console.WriteLine("Mempool:");
+foreach (var tx in blockChainService.PendingTransactions) Console.WriteLine(tx);
+Console.ForegroundColor = ConsoleColor.Blue;
+Console.WriteLine("Mining 2 blocks:");
+Console.ForegroundColor = ConsoleColor.White;
+blockChainService.MineBlock(bob.PublicKey);
+blockChainService.MineBlock(bob.PublicKey);
+Console.WriteLine($"Total blocks: {blockChainService.Chain.Count}");
+Console.WriteLine("Mempool:");
+foreach (var tx in blockChainService.PendingTransactions) Console.WriteLine(tx);
+Console.ForegroundColor = ConsoleColor.Blue;
+Console.WriteLine("Mining 2 more blocks:");
+Console.ForegroundColor = ConsoleColor.White;
+blockChainService.MineBlock(bob.PublicKey);
+blockChainService.MineBlock(bob.PublicKey);
+Console.WriteLine($"Total blocks: {blockChainService.Chain.Count}");
+Console.WriteLine("Mempool:");
+foreach (var tx in blockChainService.PendingTransactions) Console.WriteLine(tx);
+Console.ForegroundColor = ConsoleColor.Blue;
+Console.WriteLine("Mining another 2 blocks:");
+Console.ForegroundColor = ConsoleColor.White;
+blockChainService.MineBlock(bob.PublicKey);
+blockChainService.MineBlock(bob.PublicKey);
+Console.WriteLine($"Total blocks: {blockChainService.Chain.Count}");
+Console.WriteLine("Mempool:");
+foreach (var tx in blockChainService.PendingTransactions) Console.WriteLine(tx);
+Console.ForegroundColor = ConsoleColor.Blue;
+Console.WriteLine("Chain:");
+Console.ForegroundColor = ConsoleColor.White;
+displayService.DisplayBlockChain(blockChainService.Chain);*/
 //MENU
 
 while (true)
@@ -39,8 +129,8 @@ while (true)
     Console.WriteLine("4. Mine block");
     Console.WriteLine("5. Check my balance");
     Console.WriteLine("6. Show blockchain");
-    Console.WriteLine("8. Test old and new dictionary methods.");
-    Console.WriteLine("9. Test stuff");
+    Console.WriteLine("7. Delete blockchain");
+    Console.WriteLine("9. Find transaction via ID");
     Console.WriteLine("0. Exit");
 
     Console.WriteLine("Your option: ");
@@ -51,6 +141,7 @@ while (true)
             Console.WriteLine("Enter address of the node you want to connect to (Example: 127.0.0.1:5000):");
             string address = Console.ReadLine();
             p2pClient.ConnectToPeer(address);
+            p2pClient.RequestChainAsync(address.Split(':')[0], int.Parse(address.Split(':')[1])).Wait();
             break;
         case "2":
             Console.WriteLine("Enter reciever address:");
@@ -73,13 +164,15 @@ while (true)
             break;
         case "3":
             Console.WriteLine("Mempool:");
-            foreach(var tx in blockChainService.PendingTransactions)
+            foreach (var tx in blockChainService.PendingTransactions)
             {
-                Console.WriteLine($" - {tx.Id}: {tx.Amount} from {tx.From} to {tx.To}");
+                Console.WriteLine(tx);
             }
             break;
         case "4":
             blockChainService.MineBlock(myWallet.PublicKey);
+            var lastBlock = blockChainService.Chain.LastOrDefault();
+            p2pClient.BroadcastNewBlockAsync(lastBlock).Wait();
             break;
         case "5":
             Console.WriteLine($"Your balance: {blockChainService.GetBalanceNew(myWallet.PublicKey)}");
@@ -87,47 +180,110 @@ while (true)
         case "6":
             displayService.DisplayBlockChain(blockChainService.Chain);
             break;
+        case "7":
+            Console.WriteLine("Are you sure you want to delete the blockchain? This action cannot be undone. (y/n)");
+            var confirmation = Console.ReadLine();
+            if (confirmation != null && confirmation.ToLower() == "y")
+            {
+                storageService.DeleteBlockChain();
+                blockChainService.Chain.Clear();
+                Console.WriteLine("Blockchain deleted.");
+            }
+            else
+            {
+                Console.WriteLine("Action cancelled.");
+            }
+            break;
+        case "9":
+            Console.WriteLine("Enter transaction ID:");
+            var txId = Console.ReadLine();
+            var foundTx = explorer.FindTransactionLocation(txId);
+            if(foundTx.tx != null)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                if(foundTx.block != null)
+                {
+                    Console.WriteLine($"Transaction found in block: {foundTx.block.Index}" +
+                        $"\n==Transaction details==" +
+                        $"\nFrom: {foundTx.tx.From}" +
+                        $"\nTo: {foundTx.tx.To}" +
+                        $"\nAmount: {foundTx.tx.Amount}" +
+                        $"\nTime: {foundTx.tx.TimeStamp}");
+                }
+                else
+                {
+                    Console.WriteLine($"Transaction found in mempol." +
+                        $"\n==Transaction details==" +
+                        $"\nFrom: {foundTx.tx.From}" +
+                        $"\nTo: {foundTx.tx.To}" +
+                        $"\nAmount: {foundTx.tx.Amount}" +
+                        $"\nTime: {foundTx.tx.TimeStamp}");
+                }
+                Console.ForegroundColor = ConsoleColor.White;
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("Transaction not found.");
+                Console.ForegroundColor = ConsoleColor.White;
+            }
+            break;
         case "0":
             Console.WriteLine("Exiting...");
             return;
-        case "8":
-            Console.WriteLine("10000 fake transactions creation started...");
-            for(int i = 0; i < 10000; i++) {
-                TransactionService.CreateTransaction(myWallet.PublicKey, "RandomReceiver", 1, fee: 1, myWallet.PrivateKey);
-            }
-            while(blockChainService.PendingTransactions.Count > 0)
-            {
-                blockChainService.MineBlock(myWallet.PublicKey);
-            }
-            decimal balanceOld = 0;
-            var swOld = Stopwatch.StartNew();
-            for (int i = 0; i < 10000; i++)
-            {
-                balanceOld += blockChainService.GetBalanceOld(myWallet.PublicKey);
-            }
-            swOld.Stop();
-
-            decimal balanceNew = 0;
-            var swNew = Stopwatch.StartNew();
-            for (int i = 0; i < 10000; i++)
-            {
-                balanceNew += blockChainService.GetBalanceNew(myWallet.PublicKey);
-            }
-            swNew.Stop();
-            Console.WriteLine($"Old method duration: {swOld.Elapsed.TotalMilliseconds:F5} ms");
-            Console.WriteLine($"New method duration: {swNew.Elapsed.TotalMilliseconds:F5} ms");
-
-            Console.WriteLine($"Old: {swOld.Elapsed.TotalMilliseconds:F5} ms; \nNew: {swNew.Elapsed.TotalMilliseconds:F5} ms");
-            break;
-        case "9":
-            for (int i = 0; i < 5; i++)
-            {
-                newBlockChainService.MineBlock("HackerWallet");
-            }
-            blockChainService.ReplaceChain(newBlockChainService.Chain);
-            break;
         default:
             Console.WriteLine("Unknown choice.");
             break;
     }
 }
+
+/*for(int i = 0; i < 6; i++)
+{
+    blockChainService.MineBlock("Miner1");
+}
+
+blockChainService.Chain[2].Transactions.First().Amount = 9999999;
+var report = blockChainService.RunFullAudit(blockChainService.Chain);
+var attackOrigin = blockChainService.FindAttackOrigin(report, blockChainService.Chain);
+Console.WriteLine(blockChainService.GenerateForensicReport(report, attackOrigin));*/
+
+/*var aliceWallet = new Wallet(cryptoService);
+var bobWallet = new Wallet(cryptoService);
+var spammerWallet = new Wallet(cryptoService);
+
+for (int i = 0; i < 6; i++)
+{
+    testingBlockChainService.MineBlock("Miner1");
+}
+
+//State rebuild test
+var tx1 = TransactionService.CreateTransaction(aliceWallet.PublicKey, bobWallet.PublicKey, 10, fee: 1, aliceWallet.PrivateKey);
+testingBlockChainService.AddTransaction(tx1);
+testingBlockChainService.MineBlock("Miner1");
+testingBlockChainService.Chain.Last().Transactions.Where(tx => tx.From != "COINBASE").First();
+Console.WriteLine($"Validate and rebuild state result: {testingBlockChainService.ValidateAndRebuildState()}");
+Console.WriteLine($"Balances cash cleared? {testingBlockChainService.BalancesCash.Count == 0}");
+
+//TTL test
+var newTx = TransactionService.CreateTransaction(bobWallet.PublicKey, aliceWallet.PublicKey, 10, fee: 1, bobWallet.PrivateKey);
+var oldTx = TransactionService.CreateTransaction(bobWallet.PublicKey, aliceWallet.PublicKey, 10, fee: 1, bobWallet.PrivateKey);
+testingBlockChainService.AddTransaction(oldTx);
+oldTx.TimeStamp = oldTx.TimeStamp.AddSeconds(-60);
+testingBlockChainService.AddTransaction(newTx);
+Console.WriteLine($"Removed transactions: {testingBlockChainService.EvictStaleTransactions(30)}");
+Console.WriteLine($"Pending transactions count (should be 1): {testingBlockChainService.PendingTransactions.Count}");
+
+//Spam filter test
+for (int i = 0; i < 3; i++)
+{
+    testingBlockChainService.AddTransaction(TransactionService.CreateTransaction(spammerWallet.PublicKey, aliceWallet.PublicKey, 10, fee: 1, spammerWallet.PrivateKey));
+}
+try
+{
+    testingBlockChainService.AddTransaction(TransactionService.CreateTransaction(spammerWallet.PublicKey, aliceWallet.PublicKey, 10, fee: 1, spammerWallet.PrivateKey));
+
+}
+catch (InvalidOperationException ex)
+{
+    Console.WriteLine($"Spam filter triggered: {ex.Message}");
+}*/

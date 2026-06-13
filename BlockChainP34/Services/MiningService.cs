@@ -3,7 +3,7 @@ using System.Diagnostics;
 
 namespace BlockChainP34.Services
 {
-    internal class MiningService
+    public class MiningService
     {
         private readonly HashingService hashing;
 

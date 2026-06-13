@@ -4,16 +4,16 @@ namespace BlockChainP34.Services
 {
     public class BlockchainExplorer
     {
-        private List<Block> _chain;
-        public BlockchainExplorer(List<Block> chain)
+        private readonly BlockChainService _blockChainService;
+        public BlockchainExplorer(BlockChainService blockChainService)
         {
-            _chain = chain;
+            _blockChainService = blockChainService;
         }
 
         public decimal GetTotalVolume()
         {
             decimal total = 0m;
-            foreach (var block in _chain)
+            foreach (var block in _blockChainService.Chain)
             {
                 total += block.Transactions.Sum(t => t.Amount);
             }
@@ -23,7 +23,7 @@ namespace BlockChainP34.Services
         public Transaction? GetLargestTransaction()
         {
             Transaction? largest = null;
-            foreach (var block in _chain)
+            foreach (var block in _blockChainService.Chain)
             {
                 foreach (var transaction in block.Transactions)
                 {
@@ -39,7 +39,7 @@ namespace BlockChainP34.Services
         public List<Transaction> GetAddressHistory(string address)
         {
             List<Transaction> history = new List<Transaction>();
-            foreach (var block in _chain)
+            foreach (var block in _blockChainService.Chain)
             {
                 foreach (var transaction in block.Transactions)
                 {
@@ -49,24 +49,29 @@ namespace BlockChainP34.Services
                     }
                 }
             }
-            return history.ToList();
+            return history;
         }
         public (Block? block, Transaction? tx) FindTransactionLocation(string txId)
         {
-            Block? foundBlock = null;
-            Transaction? foundTransaction = null;
-            foreach (Block block in _chain)
+            if (string.IsNullOrEmpty(txId))
             {
-                foreach (Transaction transaction in block.Transactions)
-                {
-                    if (transaction.Id == txId)
-                    {
-                        foundTransaction = transaction;
-                        foundBlock = block;
-                        return (foundBlock, foundTransaction);
-                    }
-                }
+                return (null, null);
             }
+
+            var chainMatch = _blockChainService.Chain.SelectMany(block => block.Transactions, (block, transaction) => new { block, transaction }).FirstOrDefault(bt => bt.transaction.Id == txId);
+
+            if (chainMatch != null)
+            {
+                return (chainMatch.block, chainMatch.transaction);
+            }
+
+            var mempoolMatch = _blockChainService.PendingTransactions.FirstOrDefault(tx => tx.Id == txId);
+
+            if (mempoolMatch != null)
+            {
+                return (null, mempoolMatch);
+            }
+
             return (null, null);
         }
     }
