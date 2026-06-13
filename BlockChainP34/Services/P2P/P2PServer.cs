@@ -44,7 +44,8 @@ namespace BlockChainP34.Services.P2P
                 if (!string.IsNullOrEmpty(jsonLine))
                 {
                     var message = JsonSerializer.Deserialize<NetworkMessage>(jsonLine);
-                    if (message != null) {
+                    if (message != null)
+                    {
                         if (message.type == "NEW_TRANSACTION")
                         {
                             var tx = JsonSerializer.Deserialize<Transaction>(message.data);
@@ -56,7 +57,8 @@ namespace BlockChainP34.Services.P2P
                                     blockChainService.AddTransaction(tx);
                                     await p2PClient.BroadcastTransactionAsync(tx);
                                     Console.WriteLine($"[Gossip] Broadcasted transaction to other nodes... {tx.Id}");
-                                } catch(Exception ex)
+                                }
+                                catch (Exception ex)
                                 {
                                     Console.ForegroundColor = ConsoleColor.Red;
                                     Console.WriteLine($"Rejected incoming transaction: {tx.Id}: {ex.Message}");
@@ -75,7 +77,8 @@ namespace BlockChainP34.Services.P2P
                             {
                                 blockChainService.ReplaceChain(newChain);
                             }
-                        } if(message.type == "NEW_BLOCK")
+                        }
+                        if (message.type == "NEW_BLOCK")
                         {
                             var newBlock = JsonSerializer.Deserialize<Block>(message.data);
                             if (newBlock != null)
@@ -90,7 +93,8 @@ namespace BlockChainP34.Services.P2P
                                     blockChainService.PendingTransactions.RemoveAll(t => includeTxIds.Contains(t.Id));
                                 }
                             }
-                        } if(message.type == "REQUEST_MEMPOOL")
+                        }
+                        if (message.type == "REQUEST_MEMPOOL")
                         {
                             var jsonMempool = JsonSerializer.Serialize(blockChainService.PendingTransactions);
                             var responseMessage = JsonSerializer.Serialize(new NetworkMessage(type: "SYNC_MEMPOOL", data: jsonMempool));
@@ -99,7 +103,8 @@ namespace BlockChainP34.Services.P2P
 
                             Console.WriteLine($"[Gossip] Sent mempool with {blockChainService.PendingTransactions.Count} transactions...");
 
-                        } if (message.type == "SYNC_MEMPOOL")
+                        }
+                        if (message.type == "SYNC_MEMPOOL")
                         {
                             var sentTx = JsonSerializer.Deserialize<List<Transaction>>(message.data);
                             if (sentTx == null) return;
@@ -109,7 +114,7 @@ namespace BlockChainP34.Services.P2P
                             var txToInclude = new List<Transaction>();
                             foreach (var tx in sentTx)
                             {
-                                if(existingTxIds.Contains(tx.Id)) continue;
+                                if (existingTxIds.Contains(tx.Id)) continue;
 
                                 var isValid = TransactionService.ValidateTransaction(tx).IsValid;
                                 if (isValid)
@@ -119,7 +124,7 @@ namespace BlockChainP34.Services.P2P
                                     continue;
                                 }
                                 else
-                                {   
+                                {
                                     Console.ForegroundColor = ConsoleColor.Yellow;
                                     Console.WriteLine($"[Warning] Invalid transaction received in mempool sync: {tx.Id}");
                                     Console.ForegroundColor = ConsoleColor.White;
@@ -130,7 +135,7 @@ namespace BlockChainP34.Services.P2P
                     }
                 }
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 Console.WriteLine($"Error occured while handling client: {ex.Message}");
             }

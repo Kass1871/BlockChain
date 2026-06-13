@@ -15,7 +15,7 @@ namespace BlockChainP34.Services
         public List<Transaction> PendingTransactions;
         public readonly int MaxTransactionsPerBlock = 10;
         public decimal NetworkBaseFee { get; set; } = 1.0m;
-        public TimeSpan TransactionTtl = TimeSpan.FromSeconds(5);
+        public TimeSpan TransactionTtl = TimeSpan.FromSeconds(60);
 
         public Dictionary<string, decimal> BalancesCash = new Dictionary<string, decimal>();
 
