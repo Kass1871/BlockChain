@@ -10,48 +10,26 @@ namespace BlockChainP34.Services
             _blockChainService = blockChainService;
         }
 
-        public decimal GetTotalVolume()
+        public decimal GetTotalVolumeWithoutFees()
         {
-            decimal total = 0m;
-            foreach (var block in _blockChainService.Chain)
-            {
-                total += block.Transactions.Sum(t => t.Amount);
-            }
+            decimal total = _blockChainService.Chain.SelectMany(b => b.Transactions).Sum(t => t.Amount);
             return total;
         }
 
         public Transaction? GetLargestTransaction()
         {
-            Transaction? largest = null;
-            foreach (var block in _blockChainService.Chain)
-            {
-                foreach (var transaction in block.Transactions)
-                {
-                    if (largest == null || transaction.Amount > largest.Amount)
-                    {
-                        largest = transaction;
-                    }
-                }
-            }
+            Transaction? largest = _blockChainService.Chain.SelectMany(b => b.Transactions).MaxBy(t => t.Amount);
             return largest;
         }
 
-        public List<Transaction> GetAddressHistory(string address)
+        public List<Transaction> GetTransactionHistory(string address)
         {
-            List<Transaction> history = new List<Transaction>();
-            foreach (var block in _blockChainService.Chain)
-            {
-                foreach (var transaction in block.Transactions)
-                {
-                    if (transaction.From == address || transaction.To == address)
-                    {
-                        history.Add(transaction);
-                    }
-                }
-            }
+            var history = _blockChainService.Chain.SelectMany(b => b.Transactions).Where(t => t.From == address || t.To == address).OrderByDescending(t => t.TimeStamp).ToList();
+            if (history == null) return null;
+
             return history;
         }
-        public (Block? block, Transaction? tx) FindTransactionLocation(string txId)
+        public (Block? block, Transaction? tx) FindTransactionById(string txId)
         {
             if (string.IsNullOrEmpty(txId))
             {
@@ -73,6 +51,27 @@ namespace BlockChainP34.Services
             }
 
             return (null, null);
+        }
+        public Block? FindBlockByTransactionId(string txId)
+        {
+            if (string.IsNullOrEmpty(txId))
+            {
+                return null;
+            }
+
+            var match = _blockChainService.Chain.FirstOrDefault(b => b.Transactions.Any(t => t.Id == txId));
+
+            if(match != null)
+            {
+                return match;
+            }
+
+            return null;
+        }
+        public decimal GetTotalFeesEarned(string minerAddress)
+        {
+            var total = _blockChainService.Chain.Where(b => b.Author == minerAddress).SelectMany(b => b.Transactions).Where(t => t.From != "COINBASE").Sum(t => t.Fee);
+            return total;
         }
     }
 }

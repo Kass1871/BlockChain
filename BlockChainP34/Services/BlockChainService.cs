@@ -17,7 +17,7 @@ namespace BlockChainP34.Services
         public decimal NetworkBaseFee { get; set; } = 1.0m;
         public TimeSpan TransactionTtl = TimeSpan.FromSeconds(60);
 
-        public Dictionary<string, decimal> BalancesCash = new Dictionary<string, decimal>();
+        Dictionary<string, Dictionary<string, decimal>> BalancesCash = new();
 
         private readonly double _targetBlockTimeSeconds = 1;
         private readonly int _difficultyAdjustmentInterval = 3;
@@ -51,8 +51,6 @@ namespace BlockChainP34.Services
 
         public void AddTransaction(Transaction tx)
         {
-            var currentBalance = GetBalance(tx.From);
-            var totalPendingAmount = PendingTransactions.Where(t => t.From == tx.From).Sum(t => t.Amount + t.Fee);
             var isValid = TransactionService.ValidateTransaction(tx);
             if(!isValid.IsValid)
             {
@@ -66,13 +64,30 @@ namespace BlockChainP34.Services
             {
                 throw new InvalidOperationException($"Spam detected! Too many pending transactions from this address: {tx.From}");
             }
-            if(tx.Fee < NetworkBaseFee)
+            if(tx.From != "MINT" && tx.Fee < NetworkBaseFee)
             {
                 throw new Exception($"Transaction fee must be at least {NetworkBaseFee}.");
             }
             if(tx.TimeStamp > DateTime.UtcNow.AddMinutes(5)){
                 throw new Exception("Transaction timestamp is too far in the future.");
             }
+
+            if(tx.From != "MINT")
+            {
+                decimal tokenBalance = GetBalance(tx.From, tx.TokenSymbol);
+                decimal mainBalance = GetBalance(tx.From, "MAIN");
+
+                if(tx.TokenSymbol == "MAIN")
+                {
+                    if (tokenBalance < tx.Amount + tx.Fee) throw new Exception($"Insufficient MAIN balance. Available: {tokenBalance} -- Required: {tx.Amount + tx.Fee}");
+                }
+                else
+                {
+                    if (tokenBalance < tx.Amount) throw new Exception($"Insufficient {tx.TokenSymbol} balance. Available: {tokenBalance} -- Required: {tx.Amount}");
+                    if (mainBalance < tx.Fee) throw new Exception($"Insufficient MAIN for fee. Available: {mainBalance} -- Required: {tx.Fee}");
+                }
+            }
+
             PendingTransactions.Add(tx);
         }
 
@@ -192,7 +207,6 @@ namespace BlockChainP34.Services
 
         public bool IsValid(List<Block> newChain)
         {
-            var tempBalances = new Dictionary<string, decimal>();
             if (newChain.Count == 0) return false;
 
             var genesis = newChain[0];
@@ -200,11 +214,27 @@ namespace BlockChainP34.Services
             if (genesis.PreviousHash != "0") return false;
             if (genesis.Hash != _hashingService.ComputeHash(genesis)) return false;
 
+            var tempBalances = new Dictionary<string, Dictionary<string, decimal>>();
+
+            decimal GetTemp(string address, string token)
+            {
+                if (tempBalances.TryGetValue(address, out var tb) && tb.TryGetValue(token, out decimal b)) return b;
+                return 0m;
+            }
+            void AddTemp(string address, string token, decimal delta)
+            {
+                if (!tempBalances.ContainsKey(address)) tempBalances[address] = new();
+                if (!tempBalances[address].ContainsKey(token)) tempBalances[address][token] = 0m;
+                tempBalances[address][token] += delta;
+            }
+
+
             for (int i = 1; i < newChain.Count; i++)
             {
                 // POW - validate hash, previous hash link and difficulty requirement
                 var currentBlock = newChain[i];
                 var previousBlock = newChain[i - 1];
+
                 if (currentBlock.Hash != _hashingService.ComputeHash(currentBlock)) return false;
                 if (currentBlock.PreviousHash != previousBlock.Hash) return false;
                 if (!currentBlock.Hash.StartsWith(new String('0', currentBlock.DifficultyAtMining))) return false;
@@ -219,31 +249,63 @@ namespace BlockChainP34.Services
                         Console.WriteLine($"[CRITICAL] tampered transaction detected in block #{currentBlock.Index}: {validateResult.error}");
                         Console.ForegroundColor = ConsoleColor.White;
 
-                        File.AppendAllText("security_alerts.txt", $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}]\nATTACK DETECTED!\nTampered transaction at ID: {transaction.Id}\nAttacker tried to change amount to {transaction.Amount}" + Environment.NewLine);
+                        File.AppendAllText("security_alerts.txt",
+                            $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}]\nATTACK DETECTED!\nTampered transaction at ID: {transaction.Id}\nAttacker tried to change amount to {transaction.Amount}" + Environment.NewLine);
                         return false;
                     }
-                    if(transaction.From != "COINBASE")
+                    if(transaction.From == "MINT")
                     {
-                        decimal senderBalance = tempBalances.ContainsKey(transaction.From) ? tempBalances[transaction.From] : 0;
-                        if(senderBalance < transaction.Amount + transaction.Fee)
+                        AddTemp(transaction.To, transaction.TokenSymbol, transaction.Amount);
+                        continue;
+                    }
+
+                    if(transaction.From == "COINBASE")
+                    {
+                        AddTemp(transaction.To, "MAIN", transaction.Amount);
+                        continue;
+                    }
+
+                    string token = transaction.TokenSymbol;
+                    decimal tokenBalance = GetTemp(transaction.From, token);
+                    decimal mainBalance = GetTemp(transaction.From, "MAIN");
+                    
+                    if(token == "MAIN")
+                    {
+                        if(mainBalance < transaction.Amount + transaction.Fee)
                         {
                             Console.ForegroundColor = ConsoleColor.Red;
-                            Console.WriteLine($"[CRITICAL] double spending or balance tampering detected in block #{currentBlock.Index} for address {transaction.From}");
+                            Console.WriteLine($"[CRITICAL] double spending detected in block #{currentBlock.Index} for {transaction.From}");
                             Console.ForegroundColor = ConsoleColor.White;
-                            File.AppendAllText("security_alerts.txt", $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}]\nATTACK DETECTED!\nDouble spending or balance tampering for address: {transaction.From}\nAttempted amount: {transaction.Amount + transaction.Fee}" + Environment.NewLine);
+                            File.AppendAllText("security_alerts.txt",
+                                $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}]\nATTACK DETECTED!\nDouble spending for: {transaction.From}\n" + Environment.NewLine);
                             return false;
                         }
-                        tempBalances[transaction.From] = senderBalance - transaction.Amount - transaction.Fee;
                     }
-                    if (!tempBalances.ContainsKey(transaction.From))
+                    else
                     {
-                        tempBalances[transaction.From] = 0;
+                        if(tokenBalance < transaction.Amount)
+                        {
+                            Console.ForegroundColor = ConsoleColor.Red;
+                            Console.WriteLine($"[CRITICAL] insufficient {token} in block #{currentBlock.Index} for {transaction.From}");
+                            Console.ForegroundColor = ConsoleColor.White;
+                            File.AppendAllText("security_alerts.txt",
+                                $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}]\nATTACK DETECTED!\nInsufficient {token} for: {transaction.From}\n" + Environment.NewLine);
+                            return false;
+                        }
+                        if(mainBalance < transaction.Fee)
+                        {
+                            Console.ForegroundColor = ConsoleColor.Red;
+                            Console.WriteLine($"[CRITICAL] insufficient MAIN for fee in block #{currentBlock.Index} for {transaction.From}");
+                            Console.ForegroundColor = ConsoleColor.White;
+                            File.AppendAllText("security_alerts.txt",
+                                $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}]\nATTACK DETECTED!\nInsufficient MAIN fee for: {transaction.From}\n" + Environment.NewLine);
+                            return false;
+                        }
                     }
-                    if (!tempBalances.ContainsKey(transaction.To))
-                    {
-                        tempBalances[transaction.To] = 0;
-                    }
-                    tempBalances[transaction.To] += transaction.Fee;
+
+                    AddTemp(transaction.From, token, -transaction.Amount);
+                    AddTemp(transaction.From, "MAIN", -transaction.Fee);
+                    AddTemp(transaction.To, token, transaction.Amount);
                 }
             }
             return true;
@@ -290,10 +352,10 @@ namespace BlockChainP34.Services
             return $"Chain is valid with {Chain.Count} blocks. Last block hash: {Chain.Last().Hash}";
         }
 
-        public decimal GetBalance(string publicKey)
+        public decimal GetBalance(string publicKey, string token)
         {
-            var balance = 0m;
-            if(BalancesCash.TryGetValue(publicKey, out decimal confirmedBalance))
+            decimal balance = 0m;
+            if(BalancesCash.TryGetValue(publicKey, out var tokenBalances) && tokenBalances.TryGetValue(token, out decimal confirmedBalance))
             {
                 balance = confirmedBalance;
             }
@@ -302,33 +364,59 @@ namespace BlockChainP34.Services
             {
                 if (ptx.From == publicKey)
                 {
-                    balance -= ptx.Amount + ptx.Fee;
+                    if (ptx.TokenSymbol == token) balance -= ptx.Amount;
+                    if (token == "MAIN") balance -= ptx.Fee;
                 }
-                if (ptx.To == publicKey)
+                if (ptx.To == publicKey && ptx.TokenSymbol == token) balance += ptx.Fee;
+            }
+            return balance;
+        }
+        public decimal GetBalanceOld(string publicKey)
+        {
+            decimal balance = 0m;
+            foreach (var block in Chain)
+            {
+                foreach (var tx in block.Transactions)
                 {
-                    balance += ptx.Amount;
+                    if (tx.From == publicKey)
+                    {
+                        balance -= tx.Amount + tx.Fee;
+                    }
+                    if (tx.To == publicKey)
+                    {
+                        balance += tx.Amount;
+                    }
                 }
             }
             return balance;
+        }
+        public decimal GetBalanceNew(string publicKey, string token = "MAIN")
+        {
+            if (BalancesCash.TryGetValue(publicKey, out var tokenBalances) && tokenBalances.TryGetValue(token, out decimal balance))
+                return balance;
+            return 0m;
         }
 
         public void UpdateBalances(Block block)
         {
             foreach (var tx in block.Transactions)
             {
-                if(tx.From != "COINBASE")
+                if(tx.From == "MINT")
                 {
-                    if (!BalancesCash.ContainsKey(tx.From))
-                    {
-                        BalancesCash[tx.From] = 0;
-                    }
-                    BalancesCash[tx.From] -= tx.Amount + tx.Fee;
+                    AddBalance(tx.To, tx.TokenSymbol, tx.Amount);
+                    continue;
                 }
-                if(!BalancesCash.ContainsKey(tx.To))
+
+                if(tx.From == "COINBASE")
                 {
-                    BalancesCash[tx.To] = 0;
+                    AddBalance(tx.To, tx.TokenSymbol, tx.Amount);
+                    continue;
+
                 }
-                BalancesCash[tx.To] += tx.Amount;
+
+                AddBalance(tx.From, tx.TokenSymbol, -tx.Amount);
+                AddBalance(tx.From, "MAIN", -tx.Fee);
+                AddBalance(tx.To, tx.TokenSymbol, tx.Amount);
             }
         }
 
@@ -448,24 +536,31 @@ namespace BlockChainP34.Services
                 Console.ForegroundColor = ConsoleColor.White;
                 return;
             }
-            var BalanceesCashCopy = BalancesCash.ToDictionary(entry => entry.Key, entry => entry.Value);
+            var balancesCashCopy = BalancesCash.ToDictionary(
+                entry => entry.Key,
+                entry => new Dictionary<string, decimal>(entry.Value)
+                );
 
             BalancesCash.Clear();
             foreach(var block in Chain)
             {
                 UpdateBalances(block);
             }
-            foreach (var balance in BalanceesCashCopy)
+            foreach(var (address, oldTokenBalances) in balancesCashCopy)
             {
-                var balanceOld = balance.Value;
-                var balanceNew = BalancesCash.ContainsKey(balance.Key) ? BalancesCash[balance.Key] : 0;
-                if (balanceOld > balanceNew)
+                foreach(var(token, oldBalance) in oldTokenBalances)
                 {
-                    Console.ForegroundColor = ConsoleColor.Yellow;
-                    Console.WriteLine($"[Balance Audit] Warning! User {balance.Key} suddenly lost {balanceOld - balanceNew} coins due to the network backup!");
-                    Console.ForegroundColor = ConsoleColor.White;
+                    decimal newBalance = BalancesCash.TryGetValue(address, out var newTb) && newTb.TryGetValue(token, out decimal nb) ? nb : 0m;
+
+                    if(oldBalance > newBalance)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.WriteLine($"[Balance Audit] Warning! User {address} lost {oldBalance - newBalance} {token} due to chain replacement!");
+                        Console.ForegroundColor = ConsoleColor.White;
+                    }
                 }
             }
+
             foreach(var block in chainCopy)
             {
                 foreach(var tx in block.Transactions)
@@ -484,29 +579,6 @@ namespace BlockChainP34.Services
             Console.ForegroundColor = ConsoleColor.Green;
             Console.WriteLine("Chain replaced with a new longer and more difficult chain.");
             Console.ForegroundColor = ConsoleColor.White;
-        }
-        public decimal GetBalanceOld(string publicKey)
-        {
-            decimal balance = 0m;
-            foreach(var block in Chain)
-            {
-                foreach(var tx in block.Transactions)
-                {
-                    if(tx.From == publicKey)
-                    {
-                        balance -= tx.Amount + tx.Fee;
-                    }
-                    if(tx.To == publicKey)
-                    {
-                        balance += tx.Amount;
-                    }
-                }
-            }
-            return balance;
-        }
-        public decimal GetBalanceNew(string publicKey)
-        {
-            return BalancesCash.TryGetValue(publicKey, out decimal balance) ? balance : 0m;
         }
         public class AuditReport
         {
@@ -598,14 +670,22 @@ namespace BlockChainP34.Services
             {
                 UpdateBalances(block);
             }
-            if(BalancesCash.Any(kv => kv.Key != "System" && kv.Value < 0))
+            foreach(var (address, tokenBalances) in BalancesCash)
             {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("State validation failed! Negative balance detected for address: " + BalancesCash.First(kv => kv.Key != "System" && kv.Value < 0).Key);
-                Console.ForegroundColor = ConsoleColor.White;
-                BalancesCash.Clear();
-                return false;
+                if (address == "System") continue;
+                foreach(var (token, balance) in tokenBalances)
+                {
+                    if(balance < 0)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine($"State validation failed! Negative {token} balance detected for address: {address}");
+                        Console.ForegroundColor = ConsoleColor.White;
+                        BalancesCash.Clear();
+                        return false;
+                    }
+                }
             }
+
             return true;
         }
 
@@ -621,6 +701,27 @@ namespace BlockChainP34.Services
             }
             return removedCount;
             
+        }
+        private void AddBalance(string address, string token, decimal delta)
+        {
+            if (!BalancesCash.TryGetValue(address, out var tokenBalances))
+            {
+                tokenBalances = new Dictionary<string, decimal>();
+                BalancesCash[address] = tokenBalances;
+            }
+
+            if (!tokenBalances.ContainsKey(token))
+            {
+                tokenBalances[token] = 0m;
+            }
+
+            tokenBalances[token] += delta;
+        }
+
+        public Dictionary<string, decimal> GetAllTokenBalances(string publicKey)
+        {
+            var balances = BalancesCash.TryGetValue(publicKey, out var tokenBalances) ? new Dictionary<string, decimal>(tokenBalances) : new Dictionary<string, decimal>();
+            return balances;
         }
     }
 }

@@ -1,28 +1,22 @@
-﻿using System.Diagnostics;
-using System.Runtime.InteropServices;
+﻿using System.Text.Json;
 using BlockChainP34.Models;
 using BlockChainP34.Services;
 using BlockChainP34.Services.P2P;
 using Microsoft.Extensions.DependencyInjection;
 
 var cryptoService = new CryptoService();
-var myWallet = File.Exists("wallet.json") ? Wallet.Load() : new Wallet (cryptoService);
-var alice = new Wallet(cryptoService);
-/*blockChainService.MineBlock(alice.PublicKey);
-blockChainService.MineBlock(alice.PublicKey);*/
-var bob = new Wallet(cryptoService);
-/*blockChainService.MineBlock(bob.PublicKey);
-blockChainService.MineBlock(bob.PublicKey);*/
+var myWallet = File.Exists("wallet.json") ? Wallet.Load(cryptoService) : new Wallet (cryptoService);
 
-Console.WriteLine($"My wallet address: {myWallet.PublicKey}");
-Console.WriteLine("Enter your node's port:");
+Console.ForegroundColor = ConsoleColor.White;
+Console.WriteLine($"=====!!!My wallet address!!!=====\n{myWallet.PublicKey}\n================================");
+Console.WriteLine(" Enter your node's port:");
 int port = int.Parse(Console.ReadLine());
 int mode;
 do
 {
-    Console.WriteLine("Working mode:");
-    Console.WriteLine("1. Full Node");
-    Console.WriteLine("2. Light wallet (SPV Client)");
+    Console.WriteLine("[Working mode]:");
+    Console.WriteLine("(1) Full Node");
+    Console.WriteLine("(2) Light wallet (SPV Client)");
 } while (!int.TryParse(Console.ReadLine(), out mode) || (mode != 1 && mode != 2));
 
 var isFullNode = mode == 1;
@@ -57,17 +51,22 @@ if (isFullNode)
 
     while (true)
     {
-        Console.WriteLine("Main Menu");
-        Console.WriteLine("1. Connect to another node");
-        Console.WriteLine("2. Create new transaction");
-        Console.WriteLine("3. Show MeMpool");
-        Console.WriteLine("4. Mine block");
-        Console.WriteLine("5. Check my balance");
-        Console.WriteLine("6. Show blockchain");
-        Console.WriteLine("7. Delete blockchain");
-        Console.WriteLine("8. SPV transaction check");
-        Console.WriteLine("9. Find transaction via ID");
-        Console.WriteLine("0. Exit");
+        Console.WriteLine("===[Main Menu]===");
+        Console.WriteLine(" (1) Connect to another node");
+        Console.WriteLine(" (2) Create new transaction");
+        Console.WriteLine(" (3) Show MeMpool");
+        Console.WriteLine(" (4) Mine block");
+        Console.WriteLine(" (5) Check my balance");
+        Console.WriteLine(" (6) Show blockchain");
+        Console.WriteLine(" (7) Delete blockchain");
+        Console.WriteLine(" (8) SPV transaction check");
+        Console.WriteLine(" (9) Find transaction via ID");
+        Console.WriteLine(" (10) Generate offline transaction");
+        Console.WriteLine(" (11) Broadcast transaction from file");
+        Console.WriteLine(" (12) Check wallet history");
+        Console.WriteLine(" (13) Mint a token");
+        Console.WriteLine(" (14) Show all balances");
+        Console.WriteLine(" (0) Exit");
 
         Console.WriteLine("Your option: ");
 
@@ -76,7 +75,7 @@ if (isFullNode)
             case "1":
                 Console.WriteLine("Enter address of the node you want to connect to (Example: 127.0.0.1:5000):");
                 string address = Console.ReadLine();
-                p2pClient.ConnectToPeer(address);
+                p2pClient.ConnectToPeer(address).Wait();
                 p2pClient.RequestChainAsync(address.Split(':')[0], int.Parse(address.Split(':')[1])).Wait();
                 break;
             case "2":
@@ -86,10 +85,13 @@ if (isFullNode)
                 var amount = decimal.Parse(Console.ReadLine());
                 Console.WriteLine("Enter fee:");
                 var fee = decimal.Parse(Console.ReadLine() ?? "1");
-
+                Console.WriteLine();
                 try
                 {
-                    var tx = TransactionService.CreateTransaction(myWallet.PublicKey, receiver, amount, fee: fee, myWallet.PrivateKey);
+                    Console.WriteLine("Enter token symbol (leave blank for MAIN):");
+                    var tokenInput = Console.ReadLine()?.Trim().ToUpper();
+                    var token = string.IsNullOrWhiteSpace(tokenInput) ? "MAIN" : tokenInput;
+                    var tx = TransactionService.CreateTransaction(myWallet.PublicKey, receiver, amount, fee: fee, myWallet.PrivateKey, token: token);
                     blockChainService.AddTransaction(tx);
                     p2pClient.BroadcastTransactionAsync(tx).Wait();
                 }
@@ -99,7 +101,9 @@ if (isFullNode)
                 }
                 break;
             case "3":
-                Console.WriteLine("Mempool:");
+                Console.ForegroundColor = ConsoleColor.DarkBlue;
+                Console.WriteLine("===[Mempool]===:");
+                Console.ForegroundColor = ConsoleColor.White;
                 foreach (var tx in blockChainService.PendingTransactions)
                 {
                     Console.WriteLine(tx);
@@ -111,12 +115,15 @@ if (isFullNode)
                 p2pClient.BroadcastNewBlockAsync(lastBlock).Wait();
                 break;
             case "5":
-                Console.WriteLine($"Your balance: {blockChainService.GetBalanceNew(myWallet.PublicKey)}");
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"[Your balance]: {blockChainService.GetBalanceNew(myWallet.PublicKey)}");
+                Console.ForegroundColor = ConsoleColor.White;
                 break;
             case "6":
                 displayService.DisplayBlockChain(blockChainService.Chain);
                 break;
             case "7":
+                Console.ForegroundColor = ConsoleColor.Red;
                 Console.WriteLine("Are you sure you want to delete the blockchain? This action cannot be undone. (y/n)");
                 var confirmation = Console.ReadLine();
                 if (confirmation != null && confirmation.ToLower() == "y")
@@ -129,6 +136,7 @@ if (isFullNode)
                 {
                     Console.WriteLine("Action cancelled.");
                 }
+                Console.ForegroundColor = ConsoleColor.White;
                 break;
             case "8":
                 var spvBlock = blockChainService.Chain.FirstOrDefault(b => b.Transactions.Count >= 2 && !string.IsNullOrEmpty(b.MerkleRoot));
@@ -172,7 +180,7 @@ if (isFullNode)
             case "9":
                 Console.WriteLine("Enter transaction ID:");
                 var txId = Console.ReadLine();
-                var foundTx = explorer.FindTransactionLocation(txId);
+                var foundTx = explorer.FindTransactionById(txId);
                 if (foundTx.tx != null)
                 {
                     Console.ForegroundColor = ConsoleColor.Green;
@@ -203,34 +211,211 @@ if (isFullNode)
                     Console.ForegroundColor = ConsoleColor.White;
                 }
                 break;
+            case "10":
+                Console.WriteLine("Enter sender address (your public key): ");
+                var coldFrom = Console.ReadLine();
+                Console.WriteLine("Enter receiver address: ");
+                var coldTo = Console.ReadLine();
+                Console.WriteLine("Enter amount: ");
+                var coldAmount = decimal.Parse(Console.ReadLine());
+                Console.WriteLine("Enter fee: ");
+                var coldFee = decimal.Parse(Console.ReadLine());
+                Console.WriteLine("Enter your wallet password: ");
+                var coldPkeyPass = Console.ReadLine();
+                var coldPKey = string.Empty;
+                try
+                {
+                    if (File.Exists("wallet.json"))
+                    {
+                        var json = File.ReadAllText("wallet.json");
+                        var stored = JsonSerializer.Deserialize<JsonElement>(json);
+                        var encryptedPrivateKey = stored.GetProperty("PrivateKey").GetString() ?? string.Empty;
+
+                        if (encryptedPrivateKey.StartsWith("ENC:"))
+                        {
+                            var encryptedPart = encryptedPrivateKey.Substring(4);
+                            coldPKey = WalletEncryptionService.Decrypt(encryptedPart, coldPkeyPass);
+                        }
+                        else
+                        {
+                            coldPKey = encryptedPrivateKey;
+                        }
+                    }
+                    else
+                    {
+                        coldPKey = myWallet.PrivateKey;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"Error: {ex.Message}");
+                    Console.ForegroundColor = ConsoleColor.White;
+                    break;
+                }
+                Console.WriteLine("Enter output file path (e.g. offline_tx.json): ");
+                var coldFilePath = Console.ReadLine();
+                try
+                {
+                    var coldWallet = new ColdWalletService(cryptoService);
+                    coldWallet.GenerateOfflineTransaction(myWallet.PublicKey, coldTo, coldAmount, coldFee, coldPKey, coldFilePath);
+                } catch (Exception ex)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"[Cold Wallet] Failed to generate transaction: {ex.Message}");
+                    Console.ForegroundColor = ConsoleColor.White;
+                }
+                break;
+            case "11":
+                Console.WriteLine("Enter path to offline transaction file: ");
+                var broadcastPath = Console.ReadLine();
+
+                try
+                {
+                    if (!File.Exists(broadcastPath))
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine("[Cold Wallet] File not found.");
+                        Console.ForegroundColor = ConsoleColor.White;
+                        break;
+                    }
+
+                    var json = File.ReadAllText(broadcastPath);
+                    var tx = JsonSerializer.Deserialize<Transaction>(json);
+                    if(tx == null)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine("[Cold Wallet] Failed to parse transaction file.");
+                        Console.ForegroundColor = ConsoleColor.White; 
+                        break;
+                    }
+
+                    var validation = TransactionService.ValidateTransaction(tx);
+                    if (!validation.IsValid)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine($"[Cold Wallet] REJECTED: RSA signature invalid, file may have been tempered: {validation.error}");
+                        Console.ForegroundColor = ConsoleColor.White;
+                        break;
+                    }
+
+                    var tokenBalance = blockChainService.GetBalance(tx.From, tx.TokenSymbol);
+                    var mainBalance = blockChainService.GetBalance(tx.From, "MAIN");
+                    bool insufficientFunds = tx.TokenSymbol == "MAIN" ? mainBalance < tx.Amount + tx.Fee : tokenBalance < tx.Amount || mainBalance < tx.Fee;
+
+                    if (insufficientFunds)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine($"[Cold Wallet] REJECTED: insufficient balance.");
+                        Console.ForegroundColor = ConsoleColor.White;
+                        break;
+                    }
+
+                    blockChainService.AddTransaction(tx);
+                    p2pClient.BroadcastTransactionAsync(tx).Wait();
+
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.WriteLine($"[Cold Wallet] Transaction {tx.Id} added to mempool from file and broadcasted to other nodes.");
+                    Console.ForegroundColor = ConsoleColor.White;
+                } catch (Exception ex)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"[Cold Wallet] An error occured: {ex.Message}");
+                    Console.ForegroundColor = ConsoleColor.White;
+                }
+                break;
+            case "12":
+                Console.ForegroundColor = ConsoleColor.DarkGreen;
+                Console.WriteLine("===Wallet history===");
+                var history = explorer.GetTransactionHistory(myWallet.PublicKey);
+                if (history.Count == 0) Console.WriteLine("No transactions found.");
+                else
+                {
+                    foreach(var tx in history)
+                    {
+                        Console.WriteLine(tx);
+                    }
+                }
+                Console.WriteLine("====================");
+                Console.ForegroundColor = ConsoleColor.White;
+                break;
+            case "13":
+                Console.WriteLine("Enter token symbol (e.g. ACADEMY_COIN): ");
+                var mintSymbol = Console.ReadLine()?.Trim().ToUpper();
+                if (string.IsNullOrWhiteSpace(mintSymbol))
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine("[MINT] Token symbol cannot be empty.");
+                    Console.ForegroundColor = ConsoleColor.White;
+                    break;
+                }
+                Console.WriteLine("Enter amount to mint: ");
+                if(!decimal.TryParse(Console.ReadLine(), out var mintAmount) || mintAmount <= 0)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine("[MINT] Invalid amount.");
+                    Console.ForegroundColor = ConsoleColor.White;
+                    break;
+                }
+
+                try
+                {
+                    var mintTx = TransactionService.CreateMintTransaction(myWallet.PublicKey, mintAmount, mintSymbol);
+                    blockChainService.AddTransaction(mintTx);
+                    p2pClient.BroadcastTransactionAsync(mintTx).Wait();
+                    Console.ForegroundColor = ConsoleColor.Cyan;
+                    Console.WriteLine($"[Mint] Issued {mintAmount} {mintSymbol} - pending until next block is mined.");
+                    Console.ForegroundColor = ConsoleColor.White;
+                }
+                catch (Exception ex)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"[Mint] Error: {ex.Message}");
+                    Console.ForegroundColor = ConsoleColor.White;
+                }
+                break;
+            case "14":
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("===[ Confirmed Token Balances ]===");
+                var allBalances = blockChainService.GetAllTokenBalances(myWallet.PublicKey);
+                if (allBalances.Count == 0) Console.WriteLine("No confirmed balances yet. Mine a block first.");
+                else
+                {
+                    foreach(var (token, balance) in allBalances)
+                    {
+                        Console.WriteLine($"    {token}: {balance}");
+                    }
+                }
+                Console.WriteLine("==================================");
+                Console.ForegroundColor = ConsoleColor.White;
+                break;
             case "0":
+                Console.ForegroundColor = ConsoleColor.Red;
                 Console.WriteLine("Exiting...");
+                Console.ForegroundColor = ConsoleColor.White;
                 return;
             default:
+                Console.ForegroundColor = ConsoleColor.Yellow;
                 Console.WriteLine("Unknown choice.");
+                Console.ForegroundColor = ConsoleColor.White;
                 break;
         }
     }
 }
 else
 {
-    var service = new ServiceCollection();
-    service.AddSingleton<CryptoService, CryptoService>();
-    service.AddSingleton<P2PClient, P2PClient>();
+    var hashingService = new HashingService();
+    var p2pClient = new P2PClient(null, hashingService);
+    await p2pClient.InitializeAsync();
 
-    var provider = service.BuildServiceProvider();
-    
-    var p2pClient = provider.GetService<P2PClient>();
-    p2pClient?.InitializeAsync().Wait();
-
-    var localWallet = new Wallet(cryptoService);
     var localMemPool = new List<Transaction>();
     while (true)
     {
-        Console.WriteLine("1. Connect to another node");
-        Console.WriteLine("2. Create new transaction");
-        Console.WriteLine("3. Ask for SPV proof from network");
-        Console.WriteLine("0. Exit");
+        Console.WriteLine("===[SPV menu]===");
+        Console.WriteLine("(1) Connect to another node");
+        Console.WriteLine("(2) Create new transaction");
+        Console.WriteLine("(3) Ask for SPV proof from network");
+        Console.WriteLine("(0) Exit");
 
         switch (Console.ReadLine())
         {
@@ -260,10 +445,17 @@ else
                 }
                 break;
             case "3":
-                /*Console.WriteLine("Enter transaction ID: ");
+                Console.WriteLine("Enter transaction ID to verify: ");
                 var txId = Console.ReadLine();
-
-                await p2pClient.RequestSpvProofAsync("127.0.0.1", port, txId);*/
+                Console.WriteLine("Enter full node address to request proof from (e.g. 127.0.0.1:5000): ");
+                var spvAddress = Console.ReadLine()!.Split(":");
+                try
+                {
+                    await p2pClient.RequestSpvProofAsync(spvAddress[0], int.Parse(spvAddress[1]), txId);
+                } catch(Exception ex)
+                {
+                    Console.WriteLine($"An error occured: {ex.Message}");
+                }
                 break;
             case "0":
                 Console.WriteLine("Exiting...");
@@ -274,129 +466,3 @@ else
         }
     }
 }
-
-//Testing
-/*Console.ForegroundColor = ConsoleColor.Blue;
-Console.WriteLine("Testing amount priority.");
-Console.ForegroundColor = ConsoleColor.White;
-var tx10 = TransactionService.CreateTransaction(myWallet.PublicKey, alice.PublicKey, 10, fee: 2, myWallet.PrivateKey);
-var tx50 = TransactionService.CreateTransaction(myWallet.PublicKey, bob.PublicKey, 50, fee: 2, myWallet.PrivateKey);
-var tx20 = TransactionService.CreateTransaction(myWallet.PublicKey, bob.PublicKey, 20, fee: 2, myWallet.PrivateKey);
-
-blockChainService.AddTransaction(tx10);
-blockChainService.AddTransaction(tx50);
-blockChainService.AddTransaction(tx20);
-
-Console.WriteLine("Mempool before mining:");
-foreach (var tx in blockChainService.PendingTransactions) Console.WriteLine(tx);
-
-blockChainService.MineBlock(myWallet.PublicKey);
-Console.WriteLine("After:");
-foreach (var tx in blockChainService.PendingTransactions) Console.WriteLine(tx);
-Console.WriteLine("Blockchain:");
-displayService.DisplayBlockChain(blockChainService.Chain);
-
-Console.ForegroundColor = ConsoleColor.Blue;
-Console.WriteLine("Testing TTL.");
-Console.ForegroundColor = ConsoleColor.White;
-var txTTL = TransactionService.CreateTransaction(bob.PublicKey, alice.PublicKey, 32, fee: 2, bob.PrivateKey);
-blockChainService.AddTransaction(txTTL);
-Console.WriteLine($"Created transaction with TTL: {txTTL}");
-Console.WriteLine("Mempool after adding TTL tx:");
-foreach (var tx in blockChainService.PendingTransactions) Console.WriteLine(tx);
-Console.ForegroundColor = ConsoleColor.Blue;
-Console.WriteLine("Waiting 6 seconds to let TTL expire...");
-Console.ForegroundColor = ConsoleColor.White;
-Thread.Sleep(6000);
-Console.WriteLine("Mining block...");
-blockChainService.MineBlock(bob.PublicKey);
-displayService.DisplayBlockChain(blockChainService.Chain);
-
-Console.ForegroundColor = ConsoleColor.Blue;
-Console.WriteLine("Testing locktime.");
-Console.ForegroundColor = ConsoleColor.White;
-
-var txlock = TransactionService.CreateTransaction(bob.PublicKey, alice.PublicKey, 10, fee: 2, bob.PrivateKey, lockTime: 6);
-Console.WriteLine($"Created transaction with locktime: {txlock}");
-blockChainService.AddTransaction(txlock);
-Console.WriteLine("Mempool:");
-foreach (var tx in blockChainService.PendingTransactions) Console.WriteLine(tx);
-Console.ForegroundColor = ConsoleColor.Blue;
-Console.WriteLine("Mining 2 blocks:");
-Console.ForegroundColor = ConsoleColor.White;
-blockChainService.MineBlock(bob.PublicKey);
-blockChainService.MineBlock(bob.PublicKey);
-Console.WriteLine($"Total blocks: {blockChainService.Chain.Count}");
-Console.WriteLine("Mempool:");
-foreach (var tx in blockChainService.PendingTransactions) Console.WriteLine(tx);
-Console.ForegroundColor = ConsoleColor.Blue;
-Console.WriteLine("Mining 2 more blocks:");
-Console.ForegroundColor = ConsoleColor.White;
-blockChainService.MineBlock(bob.PublicKey);
-blockChainService.MineBlock(bob.PublicKey);
-Console.WriteLine($"Total blocks: {blockChainService.Chain.Count}");
-Console.WriteLine("Mempool:");
-foreach (var tx in blockChainService.PendingTransactions) Console.WriteLine(tx);
-Console.ForegroundColor = ConsoleColor.Blue;
-Console.WriteLine("Mining another 2 blocks:");
-Console.ForegroundColor = ConsoleColor.White;
-blockChainService.MineBlock(bob.PublicKey);
-blockChainService.MineBlock(bob.PublicKey);
-Console.WriteLine($"Total blocks: {blockChainService.Chain.Count}");
-Console.WriteLine("Mempool:");
-foreach (var tx in blockChainService.PendingTransactions) Console.WriteLine(tx);
-Console.ForegroundColor = ConsoleColor.Blue;
-Console.WriteLine("Chain:");
-Console.ForegroundColor = ConsoleColor.White;
-displayService.DisplayBlockChain(blockChainService.Chain);*/
-
-/*for(int i = 0; i < 6; i++)
-{
-    blockChainService.MineBlock("Miner1");
-}
-
-blockChainService.Chain[2].Transactions.First().Amount = 9999999;
-var report = blockChainService.RunFullAudit(blockChainService.Chain);
-var attackOrigin = blockChainService.FindAttackOrigin(report, blockChainService.Chain);
-Console.WriteLine(blockChainService.GenerateForensicReport(report, attackOrigin));*/
-
-/*var aliceWallet = new Wallet(cryptoService);
-var bobWallet = new Wallet(cryptoService);
-var spammerWallet = new Wallet(cryptoService);
-
-for (int i = 0; i < 6; i++)
-{
-    testingBlockChainService.MineBlock("Miner1");
-}
-
-//State rebuild test
-var tx1 = TransactionService.CreateTransaction(aliceWallet.PublicKey, bobWallet.PublicKey, 10, fee: 1, aliceWallet.PrivateKey);
-testingBlockChainService.AddTransaction(tx1);
-testingBlockChainService.MineBlock("Miner1");
-testingBlockChainService.Chain.Last().Transactions.Where(tx => tx.From != "COINBASE").First();
-Console.WriteLine($"Validate and rebuild state result: {testingBlockChainService.ValidateAndRebuildState()}");
-Console.WriteLine($"Balances cash cleared? {testingBlockChainService.BalancesCash.Count == 0}");
-
-//TTL test
-var newTx = TransactionService.CreateTransaction(bobWallet.PublicKey, aliceWallet.PublicKey, 10, fee: 1, bobWallet.PrivateKey);
-var oldTx = TransactionService.CreateTransaction(bobWallet.PublicKey, aliceWallet.PublicKey, 10, fee: 1, bobWallet.PrivateKey);
-testingBlockChainService.AddTransaction(oldTx);
-oldTx.TimeStamp = oldTx.TimeStamp.AddSeconds(-60);
-testingBlockChainService.AddTransaction(newTx);
-Console.WriteLine($"Removed transactions: {testingBlockChainService.EvictStaleTransactions(30)}");
-Console.WriteLine($"Pending transactions count (should be 1): {testingBlockChainService.PendingTransactions.Count}");
-
-//Spam filter test
-for (int i = 0; i < 3; i++)
-{
-    testingBlockChainService.AddTransaction(TransactionService.CreateTransaction(spammerWallet.PublicKey, aliceWallet.PublicKey, 10, fee: 1, spammerWallet.PrivateKey));
-}
-try
-{
-    testingBlockChainService.AddTransaction(TransactionService.CreateTransaction(spammerWallet.PublicKey, aliceWallet.PublicKey, 10, fee: 1, spammerWallet.PrivateKey));
-
-}
-catch (InvalidOperationException ex)
-{
-    Console.WriteLine($"Spam filter triggered: {ex.Message}");
-}*/

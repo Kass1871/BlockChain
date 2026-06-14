@@ -132,6 +132,46 @@ namespace BlockChainP34.Services.P2P
                             }
                             blockChainService.PendingTransactions.AddRange(txToInclude);
                         }
+                        if(message.type == "REQUEST_SPV_PROOF")
+                        {
+                            var txId = message.data;
+                            Block? targetBlock = null;
+                            Transaction? targetTx = null;
+
+                            foreach(var block in blockChainService.Chain)
+                            {
+                                var match = block.Transactions.FirstOrDefault(t => t.Id == txId);
+                                if(match != null)
+                                {
+                                    targetBlock = block;
+                                    targetTx = match;
+                                    break;
+                                }
+                            }
+
+                            string responseJson;
+                            if(targetBlock != null && targetTx != null)
+                            {
+                                var spvProof = new SpvProof { TxId = txId, TxHash = hashingService.ComputeHash(targetTx.ToRawString()),
+                                    ProofPath = hashingService.GetMerkleProof(targetBlock.Transactions, txId), MerkleRoot = targetBlock.MerkleRoot, BlockIndex = targetBlock.Index};
+                                responseJson = JsonSerializer.Serialize(new NetworkMessage("SPV_RESULT", JsonSerializer.Serialize(spvProof)));
+                            }
+                            else
+                            {
+                                responseJson = JsonSerializer.Serialize(new NetworkMessage("SPV_NOT_FOUND", txId));
+                            }
+
+                            await using var spvWriter = new StreamWriter(stream, Encoding.UTF8, 1024, leaveOpen: true) { AutoFlush = true };
+                            await spvWriter.WriteLineAsync(responseJson);
+                        }
+                        if(message.type == "REQUEST_MERKLE_ROOT")
+                        {
+                            var exists = blockChainService.Chain.Any(b => b.MerkleRoot == message.data);
+                            var responseJson = JsonSerializer.Serialize(new NetworkMessage("MERKLE_ROOT_RESULT", exists.ToString()));
+
+                            await using var writer = new StreamWriter(stream, Encoding.UTF8, 1024, leaveOpen: true) { AutoFlush = true };
+                            await writer.WriteLineAsync(responseJson);
+                        }
                     }
                 }
             }

@@ -29,7 +29,6 @@ namespace BlockChainP34.Services
             var cipherBytes = encryptor.TransformFinalBlock(plainTextBytes, 0, plainTextBytes.Length);
 
             var result = new byte[SaltSize + IvSize + cipherBytes.Length];
-            Buffer.BlockCopy(salt, 0, result, 0, cipherBytes.Length == 0 ? 0 : SaltSize);
             Buffer.BlockCopy(salt, 0, result, 0, SaltSize);
             Buffer.BlockCopy(aes.IV, 0, result, SaltSize, IvSize);
             Buffer.BlockCopy(cipherBytes, 0, result, SaltSize + IvSize, cipherBytes.Length);

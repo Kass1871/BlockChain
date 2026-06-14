@@ -1,5 +1,6 @@
 ﻿using BlockChainP34.Models;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading.Tasks.Dataflow;
 
@@ -7,9 +8,9 @@ namespace BlockChainP34.Services.P2P;
 
 public class P2PClient
 {
-    private readonly BlockChainService blockChainService;
+    private readonly BlockChainService? blockChainService;
     private readonly HashingService hashingService;
-    public P2PClient(BlockChainService blockChainService, HashingService hashingService)
+    public P2PClient(BlockChainService? blockChainService, HashingService hashingService)
     {
         this.blockChainService = blockChainService;
         this.hashingService = hashingService;
@@ -209,6 +210,8 @@ public class P2PClient
             var receivedTxs = JsonSerializer.Deserialize<List<Transaction>>(response.data);
             if (receivedTxs == null) return;
 
+            if (blockChainService == null) return;
+
             var existingTxs = blockChainService.PendingTransactions.Select(t => t.Id).ToHashSet();
             int added = 0;
 
@@ -233,6 +236,124 @@ public class P2PClient
         var jsonTxs = JsonSerializer.Serialize(transactions);
         var message = new NetworkMessage(type: "SYNC_MEMPOOL", data: jsonTxs);
         await SendMessage(message);
+    }
+    public async Task RequestSpvProofAsync(string ip, int port, string txId)
+    {
+        try
+        {
+            using var client = new TcpClient();
+            await client.ConnectAsync(ip, port);
+            await using var stream = client.GetStream();
+            await using var writer = new StreamWriter(stream) { AutoFlush = true };
+
+            await writer.WriteLineAsync(JsonSerializer.Serialize(new NetworkMessage(type: "REQUEST_SPV_PROOF", data: txId)));
+
+            using var reader = new StreamReader(stream);
+            var responseLine = await reader.ReadLineAsync();
+            if (string.IsNullOrEmpty(responseLine)) return;
+
+            var response = JsonSerializer.Deserialize<NetworkMessage>(responseLine);
+
+            if (response?.type == "SPV_NOT_FOUND")
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("[SPV] Transaction not found in the network.");
+                Console.ForegroundColor = ConsoleColor.White;
+                return;
+            }
+
+            if (response?.type == "SPV_RESULT") return;
+
+            var proof = JsonSerializer.Deserialize<SpvProof>(response.data);
+            if (proof == null) return;
+
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine($"\n[SPV] Proof received from {ip}:{port}");
+            Console.WriteLine($"[SPV] Block Index:         #{proof.BlockIndex}");
+            Console.WriteLine($"[SPV] Target tx:           {proof.TxId}");
+            Console.WriteLine($"[SPV] Tx hash:             {proof.TxHash}");
+            Console.WriteLine($"[SPV] expectedMerkleRoot:  {proof.MerkleRoot}");
+            Console.ForegroundColor = ConsoleColor.White;
+
+            var requestingPeer = $"{ip}:{port}";
+            List<string> otherPeers;
+            lock (_peersLock) { otherPeers = _peers.Where(p => p != requestingPeer).ToList(); }
+
+            if (otherPeers.Count == 0)
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("[SPV] Only one peer available - cannot cross-validate MerkleRoot. Proceeding with caution.");
+                Console.ForegroundColor = ConsoleColor.White;
+            }
+            else
+            {
+                bool rootConfirmed = false;
+                foreach (var peer in otherPeers)
+                {
+                    var parts = peer.Split(":");
+                    if (await VerifyMerkleRootWithPeer(parts[0], int.Parse(parts[1]), proof.MerkleRoot))
+                    {
+                        rootConfirmed = true;
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.WriteLine($"[SPV] MerkleRoot confirmed by independent peer {peer}.");
+                        Console.ForegroundColor = ConsoleColor.White;
+                        break;
+                    }
+                }
+                if (!rootConfirmed)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"[SPV STORM] A full node tried to give a fake merkle root! Proof denied.");
+                    Console.ForegroundColor = ConsoleColor.White;
+                    return;
+                }
+            }
+
+            Console.WriteLine($"[SPV] Merkle Proof Hash Path ({proof.ProofPath.Count} hashes):");
+            for (int i = 0; i < proof.ProofPath.Count; i++)
+                Console.WriteLine($"       [{i}] {proof.ProofPath[i]}");
+
+            var verified = hashingService.VerifyMerkleProof(proof.TxHash, proof.ProofPath, proof.MerkleRoot);
+
+            Console.WriteLine();
+            if (verified)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("[SPV Verification Passed: TRUE]");
+                Console.WriteLine($"Transaction {proof.TxId} is confirmed in block #{proof.BlockIndex}.");
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"[SPV Verification failed: FALSE]");
+            }
+            Console.ForegroundColor = ConsoleColor.White;
+        } catch(Exception ex)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"[SPV] Error: {ex.Message}");
+            Console.ForegroundColor = ConsoleColor.White;
+        }
+    }
+
+    private async Task<bool> VerifyMerkleRootWithPeer(string ip, int port, string merkleRoot)
+    {
+        try
+        {
+            using var client = new TcpClient();
+            await client.ConnectAsync(ip, port);
+            await using var stream = client.GetStream();
+            await using var writer = new StreamWriter(stream) { AutoFlush = true };
+            await writer.WriteLineAsync(JsonSerializer.Serialize(new NetworkMessage(type: "REQUEST_MERKLE_ROOT", data: merkleRoot)));
+
+            using var reader = new StreamReader(stream);
+            var line = await reader.ReadLineAsync();
+            if (string.IsNullOrEmpty(line)) return false;
+
+            var response = JsonSerializer.Deserialize<NetworkMessage>(line);
+            return response?.type == "MERKLE_ROOT_RESULT" && bool.TryParse(response.data, out var exists) && exists;
+        }
+        catch { return false; }
     }
 
     private async Task SendMessage(NetworkMessage msg)

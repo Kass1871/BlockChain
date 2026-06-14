@@ -29,7 +29,8 @@ namespace BlockChainP34.Models
 
         private void Save(string password)
         {
-            var json = JsonSerializer.Serialize(new { PublicKey, PrivateKey = WalletEncryptionService.Encrypt(PrivateKey, password) });
+            var encrypted = WalletEncryptionService.Encrypt(PrivateKey, password);
+            var json = JsonSerializer.Serialize(new { PublicKey, PrivateKey = $"ENC:{encrypted}" });
 
             File.WriteAllText("wallet.json", json);
 
@@ -38,7 +39,7 @@ namespace BlockChainP34.Models
             Console.ForegroundColor = ConsoleColor.White;
         }
 
-        public static Wallet Load()
+        public static Wallet Load(CryptoService cryptoService)
         {
             var json = File.ReadAllText("wallet.json");
             var stored = JsonSerializer.Deserialize<JsonElement>(json);
@@ -46,26 +47,48 @@ namespace BlockChainP34.Models
             var publicKey = stored.GetProperty("PublicKey").GetString()!;
             var encryptedPrivateKey = stored.GetProperty("PrivateKey").GetString()!;
 
-            Console.WriteLine("Enter your wallet password: ");
-            var password = Console.ReadLine();
-
-            try
+            const int maxAtt = 3;
+            
+            for(int i = 1; i <= maxAtt; i++)
             {
-                var privateKey = WalletEncryptionService.Decrypt(encryptedPrivateKey, password);
-                Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine("[Keystore] Wallet unlocked.");
-                Console.ForegroundColor = ConsoleColor.White;
+                Console.WriteLine("Enter your wallet password: ");
+                var password = Console.ReadLine();
 
-                return new Wallet { PublicKey = publicKey, PrivateKey = privateKey };
+                try
+                {
+                    string privateKey;
+                    if (encryptedPrivateKey.StartsWith("ENC:"))
+                    {
+                        var encryptedPart = encryptedPrivateKey.Substring(4);
+                        privateKey = WalletEncryptionService.Decrypt(encryptedPart, password);
+                    }
+                    else
+                    {
+                        privateKey = encryptedPrivateKey;
+                    }
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.WriteLine("[Keystore] Wallet unlocked.");
+                    Console.ForegroundColor = ConsoleColor.White;
+
+                    return new Wallet { PublicKey = publicKey, PrivateKey = privateKey };
+                }
+                catch
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine("[Keystore] Wrong password or corrupted wallet.");
+                    Console.ForegroundColor = ConsoleColor.White;
+                }
             }
-            catch
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("[Keystore] Too many failed attempts. Create a new wallet? Old wallet file will be overwritten. (y/n)");
+            Console.ForegroundColor = ConsoleColor.White;
+
+            if (Console.ReadLine()?.Trim().ToLower() == "y")
             {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("[Keystore] Wrong password or corrupted wallet. Exiting.");
-                Console.ForegroundColor = ConsoleColor.White;
-                Environment.Exit(1);
-                return null!;
+                return new Wallet(cryptoService);
             }
+
+            return null!;
         }
     }
 }
