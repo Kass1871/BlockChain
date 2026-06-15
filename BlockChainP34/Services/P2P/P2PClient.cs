@@ -262,10 +262,21 @@ public class P2PClient
                 return;
             }
 
-            if (response?.type == "SPV_RESULT") return;
+            if (response?.type != "SPV_RESULT")
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("[SPV] Invalid response from server.");
+                Console.ForegroundColor = ConsoleColor.White;
+                return;
+            }
 
             var proof = JsonSerializer.Deserialize<SpvProof>(response.data);
-            if (proof == null) return;
+            if (proof == null) {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("[SPV] Failed to deserialize proof.");
+                Console.ForegroundColor = ConsoleColor.White;
+                return;
+            }
 
             Console.ForegroundColor = ConsoleColor.Cyan;
             Console.WriteLine($"\n[SPV] Proof received from {ip}:{port}");

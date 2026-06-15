@@ -66,6 +66,7 @@ if (isFullNode)
         Console.WriteLine(" (12) Check wallet history");
         Console.WriteLine(" (13) Mint a token");
         Console.WriteLine(" (14) Show all balances");
+        Console.WriteLine(" (15) [DEBUG] Toggle fake merkle root simulation");
         Console.WriteLine(" (0) Exit");
 
         Console.WriteLine("Your option: ");
@@ -387,6 +388,12 @@ if (isFullNode)
                     }
                 }
                 Console.WriteLine("==================================");
+                Console.ForegroundColor = ConsoleColor.White;
+                break;
+            case "15":
+                P2PServer.Simulate_fake_merkle_root = !P2PServer.Simulate_fake_merkle_root;
+                Console.ForegroundColor = P2PServer.Simulate_fake_merkle_root ? ConsoleColor.Red : ConsoleColor.Green;
+                Console.WriteLine($"[DEBUG] Fake Merkle root simulation is now: {(P2PServer.Simulate_fake_merkle_root ? "ON" : "OFF")}");
                 Console.ForegroundColor = ConsoleColor.White;
                 break;
             case "0":

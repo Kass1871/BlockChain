@@ -11,6 +11,8 @@ namespace BlockChainP34.Services.P2P
         private readonly BlockChainService blockChainService;
         private readonly P2PClient p2PClient;
         private readonly HashingService hashingService;
+
+        public static bool Simulate_fake_merkle_root = false;
         public P2PServer(BlockChainService blockChainService, P2PClient p2PClient, HashingService hashingService)
         {
             this.blockChainService = blockChainService;
@@ -152,8 +154,17 @@ namespace BlockChainP34.Services.P2P
                             string responseJson;
                             if(targetBlock != null && targetTx != null)
                             {
+                                var merkleRoot = targetBlock.MerkleRoot;
+                                if (Simulate_fake_merkle_root)
+                                {
+                                    Console.ForegroundColor = ConsoleColor.Red;
+                                    Console.WriteLine($"[ATTACK SIM] Sending FAKE merkle root to client!");
+                                    Console.ForegroundColor = ConsoleColor.White;
+                                    merkleRoot = hashingService.ComputeHash("FAKE_ROOT_" + Guid.NewGuid().ToString());
+                                }
+
                                 var spvProof = new SpvProof { TxId = txId, TxHash = hashingService.ComputeHash(targetTx.ToRawString()),
-                                    ProofPath = hashingService.GetMerkleProof(targetBlock.Transactions, txId), MerkleRoot = targetBlock.MerkleRoot, BlockIndex = targetBlock.Index};
+                                    ProofPath = hashingService.GetMerkleProof(targetBlock.Transactions, txId), MerkleRoot = merkleRoot, BlockIndex = targetBlock.Index};
                                 responseJson = JsonSerializer.Serialize(new NetworkMessage("SPV_RESULT", JsonSerializer.Serialize(spvProof)));
                             }
                             else
